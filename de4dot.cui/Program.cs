@@ -73,6 +73,7 @@ namespace de4dot.cui {
 				new de4dot.code.deobfuscators.CodeVeil.DeobfuscatorInfo(),
 				new de4dot.code.deobfuscators.CodeWall.DeobfuscatorInfo(),
 				new de4dot.code.deobfuscators.Confuser.DeobfuscatorInfo(),
+				new de4dot.code.deobfuscators.ConfuserEx.DeobfuscatorInfo(),
 				new de4dot.code.deobfuscators.CryptoObfuscator.DeobfuscatorInfo(),
 				new de4dot.code.deobfuscators.DeepSea.DeobfuscatorInfo(),
 				new de4dot.code.deobfuscators.Dotfuscator.DeobfuscatorInfo(),

@@ -22,8 +22,36 @@ using System.Collections.Generic;
 using dnlib.DotNet.Emit;
 
 namespace de4dot.blocks {
-	public class Block : BaseBlock {
-		List<Instr> instructions = new List<Instr>();
+    public enum BlockType
+    {
+        Normal,
+        Switch,
+        SwitchCase
+    }
+
+    public class SwitchData
+    {
+        public readonly Block Block;
+        public SwitchData(Block switchBlock)
+        {
+            Block = switchBlock;
+        }
+        public int? Key = null;
+        public bool IsKeyHardCoded = false;
+    }
+
+    public class Block : BaseBlock
+	{
+	    public Block()
+	    {
+            SwitchData = new SwitchData(this);
+        }
+
+        public BlockType BlockType = BlockType.Normal;
+	    public SwitchData SwitchData;
+        public bool Processed = false;
+
+        List<Instr> instructions = new List<Instr>();
 
 		// List of all explicit (non-fall-through) targets. It's just one if it's a normal
 		// branch, but if it's a switch, it could be many targets.

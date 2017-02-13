@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">x86</Platform>
@@ -14,6 +14,7 @@
     <FileAlignment>512</FileAlignment>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>..\de4dot.snk</AssemblyOriginatorKeyFile>
+    <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -25,6 +26,7 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -36,11 +38,15 @@
     <WarningLevel>4</WarningLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup>
     <StartupObject />
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="LinqBridge">
+      <HintPath>..\LinqBridge.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Runtime.Remoting" />
@@ -150,6 +156,29 @@
     <Compile Include="deobfuscators\CodeWall\randomc\CRandomMersenne.cs" />
     <Compile Include="deobfuscators\CodeWall\randomc\CRandomMother.cs" />
     <Compile Include="deobfuscators\CodeWall\StringDecrypter.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\ConstantDecrypter.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\ConstantInliner.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\Deobfuscator.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\ControlFlowSolver.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\LzmaFinder.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\ResourceDecrypter.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\Utils.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Bea\Constants.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Bea\Engine.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Bea\Structs.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Instructions\X86ADD.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Instructions\X86DIV.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Instructions\X86IMUL.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Instructions\X86MOV.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Instructions\X86NEG.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Instructions\X86NOT.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Instructions\X86POP.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Instructions\X86PUSH.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Instructions\X86SUB.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\Instructions\X86XOR.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\UnmanagedBuff.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\X86Instruction.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\x86\X86Method.cs" />
     <Compile Include="deobfuscators\Confuser\AntiDebugger.cs" />
     <Compile Include="deobfuscators\Confuser\AntiDumping.cs" />
     <Compile Include="deobfuscators\Confuser\Arg64ConstantsReader.cs" />
@@ -270,6 +299,7 @@
     <Compile Include="deobfuscators\InitializedDataCreator.cs" />
     <Compile Include="deobfuscators\InlinedMethodsFinder.cs" />
     <Compile Include="deobfuscators\ISimpleDeobfuscator.cs" />
+    <Compile Include="deobfuscators\Lzma.cs" />
     <Compile Include="deobfuscators\MaxtoCode\CryptDecrypter.cs" />
     <Compile Include="deobfuscators\MaxtoCode\Decrypter6.cs" />
     <Compile Include="deobfuscators\MaxtoCode\DecrypterInfo.cs" />
