@@ -124,7 +124,9 @@ namespace de4dot.cui {
 				Logger.Instance.LogErrorDontIgnore("{0}", ex.Message);
 				exitCode = 1;
 			}
-			catch (Exception ex) {
+			/*catch (Exception ex)
+			{
+			    throw;
 				if (PrintFullStackTrace()) {
 					PrintStackTrace(ex);
 					Logger.Instance.LogErrorDontIgnore("\nTry the latest version!");
@@ -134,7 +136,7 @@ namespace de4dot.cui {
 					Logger.Instance.LogErrorDontIgnore("Hmmmm... something didn't work. Try the latest version.");
 				}
 				exitCode = 1;
-			}
+			}*/
 
 			if (Logger.Instance.NumIgnoredMessages > 0) {
 				if (Logger.Instance.NumIgnoredMessages == 1)

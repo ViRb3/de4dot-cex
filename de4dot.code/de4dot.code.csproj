@@ -17,7 +17,7 @@
     <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
+    <PlatformTarget>x86</PlatformTarget>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
@@ -159,8 +159,9 @@
     <Compile Include="deobfuscators\ConfuserEx\ConstantDecrypter.cs" />
     <Compile Include="deobfuscators\ConfuserEx\ConstantInliner.cs" />
     <Compile Include="deobfuscators\ConfuserEx\Deobfuscator.cs" />
-    <Compile Include="deobfuscators\ConfuserEx\ControlFlowSolver.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\ControlFlowFixer.cs" />
     <Compile Include="deobfuscators\ConfuserEx\LzmaFinder.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\ProxyCallFixer.cs" />
     <Compile Include="deobfuscators\ConfuserEx\ResourceDecrypter.cs" />
     <Compile Include="deobfuscators\ConfuserEx\Utils.cs" />
     <Compile Include="deobfuscators\ConfuserEx\x86\Bea\Constants.cs" />

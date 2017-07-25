@@ -525,4 +525,242 @@ namespace de4dot.code.deobfuscators {
 			return instr.Operand as IMethod;
 		}
 	}
+
+    //
+    // Combines the above 1st and 2nd templates
+    //
+    public abstract class ProxyCallFixer4 : ProxyCallFixerBase
+    {
+        FieldDefAndDeclaringTypeDict<DelegateInfo> fieldToDelegateInfo = new FieldDefAndDeclaringTypeDict<DelegateInfo>();
+        MethodDefAndDeclaringTypeDict<DelegateInfo> proxyMethodToDelegateInfo = new MethodDefAndDeclaringTypeDict<DelegateInfo>();
+
+        protected ProxyCallFixer4(ModuleDefMD module)
+            : base(module)
+        {
+        }
+
+        protected ProxyCallFixer4(ModuleDefMD module, ProxyCallFixer4 oldOne)
+            : base(module, oldOne)
+        {
+            foreach (var key in oldOne.fieldToDelegateInfo.GetKeys())
+                fieldToDelegateInfo.Add(Lookup(key, "Could not find field"), Copy(oldOne.fieldToDelegateInfo.Find(key)));
+
+            foreach (var oldMethod in oldOne.proxyMethodToDelegateInfo.GetKeys())
+            {
+                var oldDi = oldOne.proxyMethodToDelegateInfo.Find(oldMethod);
+                var method = Lookup(oldMethod, "Could not find proxy method");
+                proxyMethodToDelegateInfo.Add(method, Copy(oldDi));
+            }
+        }
+
+        protected void AddDelegateInfo(DelegateInfo di)
+        {
+            fieldToDelegateInfo.Add(di.field, di);
+        }
+
+        protected DelegateInfo GetDelegateInfo(IField field)
+        {
+            if (field == null)
+                return null;
+            return fieldToDelegateInfo.Find(field);
+        }
+
+        public void Find()
+        {
+            if (delegateCreatorMethods.Count == 0)
+                return;
+
+            Logger.v("Finding all proxy delegates");
+            foreach (var type in GetDelegateTypes())
+            {
+                var cctor = type.FindStaticConstructor();
+                if (cctor == null || !cctor.HasBody)
+                    continue;
+                if (!type.HasFields)
+                    continue;
+
+                object context = CheckCctor(type, cctor);
+                if (context == null)
+                    continue;
+
+                Logger.v("Found proxy delegate: {0} ({1:X8})", Utils.RemoveNewlines(type), type.MDToken.ToUInt32());
+                RemovedDelegateCreatorCalls++;
+                var fieldToMethod = GetFieldToMethodDictionary(type);
+
+                Logger.Instance.Indent();
+                foreach (var field in type.Fields)
+                {
+                    MethodDef proxyMethod;
+                    bool supportType1 = fieldToMethod.TryGetValue(field, out proxyMethod);
+                    bool supportType2 = field.IsStatic;
+
+                    if (!supportType1 && !supportType2)
+                        continue;
+
+                    IMethod calledMethod;
+                    OpCode callOpcode;
+                    GetCallInfo(context, field, out calledMethod, out callOpcode);
+
+                    if (calledMethod == null)
+                        continue;
+
+                    if (supportType1)
+                    {
+                        Add2(proxyMethod, new DelegateInfo(field, calledMethod, callOpcode));
+                    }
+                    if (supportType2)
+                    {
+                        AddDelegateInfo(new DelegateInfo(field, calledMethod, callOpcode));
+                    }
+  
+                    Logger.v("Field: {0}, Opcode: {1}, Method: {2} ({3:X8})",
+                                Utils.RemoveNewlines(field.Name),
+                                callOpcode,
+                                Utils.RemoveNewlines(calledMethod),
+                                calledMethod.MDToken.Raw);
+                }
+                Logger.Instance.DeIndent();
+                delegateTypesDict[type] = true;
+            }
+        }
+
+        protected void Add2(MethodDef method, DelegateInfo di)
+        {
+            proxyMethodToDelegateInfo.Add(method, di);
+        }
+
+        protected abstract object CheckCctor(TypeDef type, MethodDef cctor);
+        protected abstract void GetCallInfo(object context, FieldDef field, out IMethod calledMethod, out OpCode callOpcode);
+
+        Dictionary<FieldDef, MethodDef> GetFieldToMethodDictionary(TypeDef type)
+        {
+            var dict = new Dictionary<FieldDef, MethodDef>();
+            foreach (var method in type.Methods)
+            {
+                if (!method.IsStatic || !method.HasBody || method.Name == ".cctor")
+                    continue;
+
+                var instructions = method.Body.Instructions;
+                for (int i = 0; i < instructions.Count; i++)
+                {
+                    var instr = instructions[i];
+                    if (instr.OpCode.Code != Code.Ldsfld)
+                        continue;
+                    var field = instr.Operand as FieldDef;
+                    if (field == null)
+                        continue;
+
+                    dict[field] = method;
+                    break;
+                }
+            }
+            return dict;
+        }
+
+        protected override bool Deobfuscate(Blocks blocks, IList<Block> allBlocks)
+        {     
+            var removeInfos = new Dictionary<Block, List<RemoveInfo>>();
+
+            foreach (var block in allBlocks)
+            {
+                var instrs = block.Instructions;
+                for (int i = 0; i < instrs.Count; i++)
+                {
+                    var instr = instrs[i];
+
+                    if (instr.OpCode == OpCodes.Call)
+                    {
+                        var method = instr.Operand as IMethod;
+                        if (method == null)
+                            continue;
+
+                        var di = proxyMethodToDelegateInfo.Find(method);
+                        if (di == null)
+                            continue;
+
+                        Add(removeInfos, block, i, di);
+                    }
+                    else if (instr.OpCode == OpCodes.Ldsfld)
+                    {
+                        var di = GetDelegateInfo(instr.Operand as IField);
+                        if (di == null)
+                            continue;
+
+                        var callInfo = FindProxyCall(di, block, i);
+                        if (callInfo != null)
+                        {
+                            Add(removeInfos, block, i, null);
+                            Add(removeInfos, callInfo.Block, callInfo.Index, di);
+                        }
+                        else
+                        {
+                            errors++;
+                            Logger.w("Could not fix proxy call. Method: {0} ({1:X8}), Proxy type: {2} ({3:X8})",
+                                Utils.RemoveNewlines(blocks.Method),
+                                blocks.Method.MDToken.ToInt32(),
+                                Utils.RemoveNewlines(di.field.DeclaringType),
+                                di.field.DeclaringType.MDToken.ToInt32());
+                        }
+                    }
+                }
+            }
+
+            return FixProxyCalls(blocks.Method, removeInfos);
+        }
+
+        protected virtual BlockInstr FindProxyCall(DelegateInfo di, Block block, int index)
+        {
+            return FindProxyCall(di, block, index, new Dictionary<Block, bool>(), 1);
+        }
+
+        BlockInstr FindProxyCall(DelegateInfo di, Block block, int index, Dictionary<Block, bool> visited, int stack)
+        {
+            if (visited.ContainsKey(block))
+                return null;
+            if (index <= 0)
+                visited[block] = true;
+
+            var instrs = block.Instructions;
+            for (int i = index + 1; i < instrs.Count; i++)
+            {
+                if (stack <= 0)
+                    return null;
+                var instr = instrs[i];
+                instr.Instruction.UpdateStack(ref stack, false);
+                if (stack < 0)
+                    return null;
+
+                if (instr.OpCode != OpCodes.Call && instr.OpCode != OpCodes.Callvirt)
+                {
+                    if (stack <= 0)
+                        return null;
+                    continue;
+                }
+                var calledMethod = instr.Operand as IMethod;
+                if (calledMethod == null)
+                    return null;
+                if (stack != (DotNetUtils.HasReturnValue(calledMethod) ? 1 : 0))
+                    continue;
+                if (calledMethod.Name != "Invoke")
+                    return null;
+
+                return new BlockInstr
+                {
+                    Block = block,
+                    Index = i,
+                };
+            }
+            if (stack <= 0)
+                return null;
+
+            foreach (var target in block.GetTargets())
+            {
+                var info = FindProxyCall(di, target, -1, visited, stack);
+                if (info != null)
+                    return info;
+            }
+
+            return null;
+        }
+    }
 }

@@ -58,12 +58,13 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
         class Deobfuscator : DeobfuscatorBase
         {
-
-            bool detectedConfuserExAttribute = false, deobfuscating = false;
-            string version = "";
-            LzmaFinder lzmaFinder;
-            ConstantsDecrypter constantDecrypter;
-            ResourceDecrypter resourceDecrypter;
+            private bool _detectedConfuserExAttribute = false, _deobfuscating = false;
+            private string _version = "";
+            private LzmaFinder _lzmaFinder;
+            private ConstantsDecrypter _constantDecrypter;
+            private ResourceDecrypter _resourceDecrypter;
+            private ProxyCallFixer _proxyCallFixer;
+            private ControlFlowFixer _controlFlowFixer = new ControlFlowFixer();
 
             #region ConstantInliners
 
@@ -97,7 +98,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             public override string Name
             {
-                get { return $"{TypeLong} {version}"; }
+                get { return $"{TypeLong} {_version}"; }
             }
 
             public Deobfuscator(Options options)
@@ -108,28 +109,33 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             protected override int DetectInternal()
             {
                 int val = 0;
-                if (detectedConfuserExAttribute) val += 0;
-                if (lzmaFinder.FoundLzma) val += 10;
-                if (constantDecrypter.Detected) val += 10;
-                if (resourceDecrypter.Detected) val += 10;
+                if (_detectedConfuserExAttribute) val += 0;
+                if (_lzmaFinder.FoundLzma) val += 10;
+                if (_constantDecrypter.Detected) val += 10;
+                if (_resourceDecrypter.Detected) val += 10;
                 return val;
             }
 
             protected override void ScanForObfuscator()
             {
-                lzmaFinder = new LzmaFinder(module, DeobfuscatedFile);
-                lzmaFinder.Find();
-                constantDecrypter = new ConstantsDecrypter(module, lzmaFinder.Method, DeobfuscatedFile);
-                resourceDecrypter = new ResourceDecrypter(module, lzmaFinder.Method, DeobfuscatedFile);
-                if (lzmaFinder.FoundLzma)
+                _lzmaFinder = new LzmaFinder(module, DeobfuscatedFile);
+                _lzmaFinder.Find();
+                _constantDecrypter = new ConstantsDecrypter(module, _lzmaFinder.Method, DeobfuscatedFile);
+                _resourceDecrypter = new ResourceDecrypter(module, _lzmaFinder.Method, DeobfuscatedFile);
+                if (_lzmaFinder.FoundLzma)
                 {
-                    constantDecrypter.Find();
-                    resourceDecrypter.Find();
+                    _constantDecrypter.Find();
+                    _resourceDecrypter.Find();
                 }
+
+                _proxyCallFixer = new ProxyCallFixer(module, DeobfuscatedFile);
+                _proxyCallFixer.FindDelegateCreatorMethod();
+                _proxyCallFixer.Find();
+
                 DetectConfuserExAttribute();
             }
 
-            public void DetectConfuserExAttribute()
+            private void DetectConfuserExAttribute()
             {
                 var versions = new List<string>();
                 foreach (var attribute in module.CustomAttributes)
@@ -143,8 +149,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                         var value = argument.Value.ToString();
                         if (!value.Contains("ConfuserEx"))
                             continue;
-                        detectedConfuserExAttribute = true;
-                        version = value.Replace("ConfuserEx", "");
+                        _detectedConfuserExAttribute = true;
+                        _version = value.Replace("ConfuserEx", "");
                         return;
                     }
                 }
@@ -152,8 +158,10 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             public override void DeobfuscateBegin()
             {
-                if (constantDecrypter.Detected)
+                if (_constantDecrypter.Detected)
                 {
+                    Logger.w("Constants encryption detected! Please note that the decryption method has to be set manually!"); //TODO: Remove
+
                     sbyteValueInliner = new SByteValueInliner();
                     byteValueInliner = new ByteValueInliner();
                     int16ValueInliner = new Int16ValueInliner();
@@ -165,37 +173,41 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     singleValueInliner = new SingleValueInliner();
                     doubleValueInliner = new DoubleValueInliner();
                     arrayValueInliner = new ArrayValueInliner(initializedDataCreator);
-                    foreach (var info in constantDecrypter.Decrypters)
+                    foreach (var info in _constantDecrypter.Decrypters)
                     {
                         staticStringInliner.Add(info.Method,
-                            (method, gim, args) => constantDecrypter.DecryptString(info, gim, (uint) args[0]));
+                            (method, gim, args) => _constantDecrypter.DecryptString(info, gim, (uint) args[0]));
                         sbyteValueInliner.Add(info.Method,
-                            (method, gim, args) => constantDecrypter.DecryptSByte(info, gim, (uint) args[0]));
+                            (method, gim, args) => _constantDecrypter.DecryptSByte(info, gim, (uint) args[0]));
                         byteValueInliner.Add(info.Method,
-                            (method, gim, args) => constantDecrypter.DecryptByte(info, gim, (uint) args[0]));
+                            (method, gim, args) => _constantDecrypter.DecryptByte(info, gim, (uint) args[0]));
                         int16ValueInliner.Add(info.Method,
-                            (method, gim, args) => constantDecrypter.DecryptInt16(info, gim, (uint) args[0]));
+                            (method, gim, args) => _constantDecrypter.DecryptInt16(info, gim, (uint) args[0]));
                         uint16ValueInliner.Add(info.Method,
-                            (method, gim, args) => constantDecrypter.DecryptUInt16(info, gim, (uint) args[0]));
+                            (method, gim, args) => _constantDecrypter.DecryptUInt16(info, gim, (uint) args[0]));
                         int32ValueInliner.Add(info.Method,
-                            (method, gim, args) => constantDecrypter.DecryptInt32(info, gim, (uint) args[0]));
+                            (method, gim, args) => _constantDecrypter.DecryptInt32(info, gim, (uint) args[0]));
                         uint32ValueInliner.Add(info.Method,
-                            (method, gim, args) => constantDecrypter.DecryptUInt32(info, gim, (uint) args[0]));
+                            (method, gim, args) => _constantDecrypter.DecryptUInt32(info, gim, (uint) args[0]));
                         int64ValueInliner.Add(info.Method,
-                            (method, gim, args) => constantDecrypter.DecryptInt64(info, gim, (uint) args[0]));
+                            (method, gim, args) => _constantDecrypter.DecryptInt64(info, gim, (uint) args[0]));
                         uint64ValueInliner.Add(info.Method,
-                            (method, gim, args) => constantDecrypter.DecryptUInt64(info, gim, (uint) args[0]));
+                            (method, gim, args) => _constantDecrypter.DecryptUInt64(info, gim, (uint) args[0]));
                         singleValueInliner.Add(info.Method,
-                            (method, gim, args) => constantDecrypter.DecryptSingle(info, gim, (uint) args[0]));
+                            (method, gim, args) => _constantDecrypter.DecryptSingle(info, gim, (uint) args[0]));
                         doubleValueInliner.Add(info.Method,
-                            (method, gim, args) => constantDecrypter.DecryptDouble(info, gim, (uint) args[0]));
+                            (method, gim, args) => _constantDecrypter.DecryptDouble(info, gim, (uint) args[0]));
                         arrayValueInliner.Add(info.Method,
-                            (method, gim, args) => constantDecrypter.DecryptArray(info, gim, (uint) args[0]));
+                            (method, gim, args) => _constantDecrypter.DecryptArray(info, gim, (uint) args[0]));
                     }
-                    deobfuscating = true;
+                    _deobfuscating = true;
                 }
-                if (resourceDecrypter.Detected)
-                    resourceDecrypter.Fix();
+                if (_resourceDecrypter.Detected)
+                {
+                    Logger.w("Resource encryption detected! Please note that the decryption method has to be set manually!"); //TODO: Remove
+                    _resourceDecrypter.Fix();
+                }
+
                 base.DeobfuscateBegin();
             }
 
@@ -204,9 +216,9 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 get
                 {
                     var list = new List<IBlocksDeobfuscator>();
-                    list.Add(new ControlFlowSolver());
+                    list.Add(_controlFlowFixer);
 
-                    if (deobfuscating && int32ValueInliner != null)
+                    if (_deobfuscating && int32ValueInliner != null)
                         list.Add(new ConstantsInliner(sbyteValueInliner, byteValueInliner, int16ValueInliner,
                                 uint16ValueInliner,
                                 int32ValueInliner, uint32ValueInliner, int64ValueInliner, uint64ValueInliner,
@@ -216,7 +228,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 }
             }
 
-            bool CanRemoveLzma = true;
+            bool _canRemoveLzma = true;
 
             public override void DeobfuscateEnd()
             {
@@ -224,37 +236,47 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
                 List<MethodDef> toRemoveFromCctor = new List<MethodDef>();
 
-                if (constantDecrypter.Detected)
+                if (_constantDecrypter.Detected)
                     if (CanRemoveStringDecrypterType)
                     {
-                        toRemoveFromCctor.Add(constantDecrypter.Method);
-                        AddMethodToBeRemoved(constantDecrypter.Method, "Constant Decrypter Initializer");
-                        foreach (var dec in constantDecrypter.Decrypters)
+                        toRemoveFromCctor.Add(_constantDecrypter.Method);
+                        AddMethodToBeRemoved(_constantDecrypter.Method, "Constant Decrypter Initializer");
+                        foreach (var dec in _constantDecrypter.Decrypters)
                             AddMethodToBeRemoved(dec.Method, "Constant Decrypter Method");
-                        AddFieldsToBeRemoved(constantDecrypter.Fields, "Constant Decrypter Fields");
-                        AddTypeToBeRemoved(constantDecrypter.Type, "Array field signature type");
+                        AddFieldsToBeRemoved(_constantDecrypter.Fields, "Constant Decrypter Fields");
+                        AddTypeToBeRemoved(_constantDecrypter.Type, "Array field signature type");
                     }
                     else
-                        CanRemoveLzma = false;
+                        _canRemoveLzma = false;
 
-                if (resourceDecrypter.Detected && resourceDecrypter.CanRemoveLzma)
+                if (_resourceDecrypter.Detected && _resourceDecrypter.CanRemoveLzma)
                 {
-                    toRemoveFromCctor.Add(resourceDecrypter.Method);
-                    AddMethodToBeRemoved(resourceDecrypter.Method, "Resource decrypter Initializer method");
-                    AddMethodToBeRemoved(resourceDecrypter.AssembyResolveMethod,
+                    toRemoveFromCctor.Add(_resourceDecrypter.Method);
+                    AddMethodToBeRemoved(_resourceDecrypter.Method, "Resource decrypter Initializer method");
+                    AddMethodToBeRemoved(_resourceDecrypter.AssembyResolveMethod,
                         "Resource decrypter AssemblyResolve method");
-                    AddFieldsToBeRemoved(resourceDecrypter.Fields, "Constant Decrypter Fields");
-                    AddTypeToBeRemoved(resourceDecrypter.Type, "Array field signature type");
+                    AddFieldsToBeRemoved(_resourceDecrypter.Fields, "Constant Decrypter Fields");
+                    AddTypeToBeRemoved(_resourceDecrypter.Type, "Array field signature type");
                 }
 
-                if (!constantDecrypter.CanRemoveLzma || !resourceDecrypter.CanRemoveLzma)
-                    CanRemoveLzma = false;
+                if (!_constantDecrypter.CanRemoveLzma || !_resourceDecrypter.CanRemoveLzma)
+                    _canRemoveLzma = false;
 
-                if (lzmaFinder.FoundLzma && CanRemoveLzma)
+                if (_lzmaFinder.FoundLzma && _canRemoveLzma)
                 {
-                    AddMethodToBeRemoved(lzmaFinder.Method, "Lzma Decompress method");
-                    AddTypesToBeRemoved(lzmaFinder.Types, "Lzma Nested Types");
+                    AddMethodToBeRemoved(_lzmaFinder.Method, "Lzma Decompress method");
+                    AddTypesToBeRemoved(_lzmaFinder.Types, "Lzma Nested Types");
                 }
+
+                if (_proxyCallFixer.Detected)
+                {
+                    AddTypesToBeRemoved(_proxyCallFixer.DelegateTypes, "Proxy delegates");
+                    AddMethodsToBeRemoved(_proxyCallFixer.DelegateCreatorMethods, "Proxy creator methods");
+                    AddTypesToBeRemoved(_proxyCallFixer.AttributeTypes, "Proxy creator attributes");
+                    AddMethodsToBeRemoved(_proxyCallFixer.NativeMethods, "Proxy native methods");
+                }
+                
+                AddMethodsToBeRemoved(_controlFlowFixer.NativeMethods, "Control flow native methods");
 
                 var moduleCctor = DotNetUtils.GetModuleTypeCctor(module);
                 foreach (var instr in moduleCctor.Body.Instructions)
@@ -272,6 +294,12 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             {
                 var list = new List<int>();
                 return list;
+            }
+
+            public override void DeobfuscateMethodEnd(Blocks blocks)
+            {
+                _proxyCallFixer.Deobfuscate(blocks);
+                base.DeobfuscateMethodEnd(blocks);
             }
         }
     }

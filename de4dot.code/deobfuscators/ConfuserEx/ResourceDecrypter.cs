@@ -171,7 +171,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             Buffer.BlockCopy(array, 0, buffer, 0, array.Length * l1);
             return buffer;
         }
-        private void DecryptArray(uint[] array)
+        private void DecryptArray(uint[] array) //TODO: Automatic detection
         {
             int num = array.Length;
             uint[] array2 = new uint[16];
