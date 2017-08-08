@@ -5,7 +5,6 @@ using System.Runtime.InteropServices;
 using ConfuserDeobfuscator.Engine.Routines.Ex.x86;
 using ConfuserDeobfuscator.Engine.Routines.Ex.x86.Instructions;
 using de4dot.Bea;
-using de4dot.code.x86;
 using dnlib.DotNet;
 
 namespace de4dot.code.deobfuscators.ConfuserEx.x86
@@ -27,7 +26,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx.x86
             {"EDI", 0}
         };
 
-        readonly ModuleDefMD _module;
+        private readonly ModuleDefMD _module;
         public X86Method(MethodDef method,ModuleDefMD module)
         {
             this._module = module;

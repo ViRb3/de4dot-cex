@@ -1,8 +1,8 @@
-﻿using de4dot.Bea;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Globalization;
+using de4dot.Bea;
 
-namespace ConfuserDeobfuscator.Engine.Routines.Ex.x86
+namespace de4dot.code.deobfuscators.ConfuserEx.x86
 {
     public enum X86OpCode
     {

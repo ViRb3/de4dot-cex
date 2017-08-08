@@ -6,3 +6,4 @@
 *.suo
 /Debug/
 /Release/
+.idea/

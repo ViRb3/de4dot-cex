@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Runtime.InteropServices;
 
-namespace de4dot.code.x86
+namespace de4dot.code.deobfuscators.ConfuserEx.x86
 {
     public class UnmanagedBuffer
     {
-        public readonly IntPtr Ptr = IntPtr.Zero;
-        public readonly int Length = 0;
+        public readonly IntPtr Ptr;
+        public readonly int Length;
 
         public UnmanagedBuffer(byte[] data)
         {

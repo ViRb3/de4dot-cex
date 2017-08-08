@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
-using System.Text;
 using de4dot.blocks;
 using de4dot.blocks.cflow;
 using de4dot.code.deobfuscators.ConfuserEx.x86;
@@ -11,29 +9,28 @@ using dnlib.DotNet.Emit;
 
 namespace de4dot.code.deobfuscators.ConfuserEx
 {
-    class Context
+    internal class Context
     {
-        public uint FieldToken;
         public int ByteNum;
         public MethodDef CreateMethod;
+        public uint FieldToken;
 
         public Context(uint fieldToken, int byteNum, MethodDef createMethod)
         {
-            this.FieldToken = fieldToken;
-            this.ByteNum = byteNum; // 2nd parameter of the Delegate CreateMethod
-            this.CreateMethod = createMethod;
+            FieldToken = fieldToken;
+            ByteNum = byteNum; // 2nd parameter of the Delegate CreateMethod
+            CreateMethod = createMethod;
         }
     }
 
-    class ProxyCallFixer : ProxyCallFixer4
+    internal class ProxyCallFixer : ProxyCallFixer4
     {
-        public List<MethodDef> NativeMethods = new List<MethodDef>();
+        private readonly InstructionEmulator _instructionEmulator = new InstructionEmulator();
+        private readonly List<MethodDef> _processedMethods = new List<MethodDef>();
+        private readonly ISimpleDeobfuscator _simpleDeobfuscator;
         public List<TypeDef> AttributeTypes = new List<TypeDef>();
         public List<MethodDef> DelegateCreatorMethods = new List<MethodDef>();
-
-        private readonly InstructionEmulator _instructionEmulator = new InstructionEmulator();
-        private readonly ISimpleDeobfuscator _simpleDeobfuscator;
-        private readonly List<MethodDef> _processedMethods = new List<MethodDef>();
+        public List<MethodDef> NativeMethods = new List<MethodDef>();
 
         public ProxyCallFixer(ModuleDefMD module, ISimpleDeobfuscator simpleDeobfuscator) : base(module)
         {
@@ -52,20 +49,21 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 _processedMethods.Add(cctor);
             }
 
-            List<Context> contexts = new List<Context>();
+            var contexts = new List<Context>();
             var instructions = cctor.Body.Instructions;
             instructions.SimplifyMacros(cctor.Body.Variables, cctor.Parameters);
-            for (int i = 0; i < instructions.Count; i++)
+            for (var i = 0; i < instructions.Count; i++)
             {
-                var instrs = DotNetUtils.GetInstructions(instructions, i, OpCodes.Ldtoken, OpCodes.Ldc_I4, OpCodes.Call);
+                var instrs =
+                    DotNetUtils.GetInstructions(instructions, i, OpCodes.Ldtoken, OpCodes.Ldc_I4, OpCodes.Call);
                 if (instrs == null)
                     continue;
 
-                uint fieldToken = ((IField) instrs[0].Operand).MDToken.ToUInt32();
-                int byteNum = (int)instrs[1].Operand;
+                var fieldToken = ((IField) instrs[0].Operand).MDToken.ToUInt32();
+                var byteNum = (int) instrs[1].Operand;
                 var createMethod = instrs[2].Operand as MethodDef;
 
-                if(!DelegateCreatorMethods.Contains(createMethod))
+                if (!DelegateCreatorMethods.Contains(createMethod))
                     DelegateCreatorMethods.Add(createMethod);
 
                 contexts.Add(new Context(fieldToken, byteNum, createMethod));
@@ -84,7 +82,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
         private byte[] GetExtraDataToken(byte[] sigData)
         {
-            byte[] extraData = new byte[4];
+            var extraData = new byte[4];
 
             // [original signature] [extra signature]
             //         ...             X C0 X X X
@@ -94,11 +92,14 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             return extraData;
         }
 
-        protected override void GetCallInfo(object context, FieldDef field, out IMethod calledMethod, out OpCode callOpcode)
+        protected override void GetCallInfo(object context, FieldDef field, out IMethod calledMethod,
+            out OpCode callOpcode)
         {
             var contexts = (List<Context>) context;
             var ctx = contexts.First(c => c.FieldToken == field.MDToken.ToInt32());
-            var originalMethod = DotNetUtils.Clone(ctx.CreateMethod); // backup original method and restore because changes are not universal
+            var originalMethod =
+                DotNetUtils.Clone(ctx
+                    .CreateMethod); // backup original method and restore because changes are not universal
             DeobfuscateIfNeeded(ctx.CreateMethod);
 
             var instructions = ctx.CreateMethod.Body.Instructions;
@@ -106,32 +107,32 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             var parameters = ctx.CreateMethod.Parameters;
 
             instructions.SimplifyMacros(variables, parameters);
-            byte[] sigData = module.ReadBlob(ctx.FieldToken);
-            byte[] extraDataToken = GetExtraDataToken(sigData);
-            int modifierMDToken = ((CModOptSig)field.FieldType).Modifier.MDToken.ToInt32();
+            var sigData = module.ReadBlob(ctx.FieldToken);
+            var extraDataToken = GetExtraDataToken(sigData);
+            var modifierMDToken = ((CModOptSig) field.FieldType).Modifier.MDToken.ToInt32();
 
             ReplaceMetadataToken(ref instructions, modifierMDToken, variables[0]);
             ReplaceFieldNameChars(ref instructions, field.Name, variables[0]);
             InlineArrays(ref instructions, extraDataToken, variables[1], variables[2]);
             RemoveDecrementorBlock(ref instructions, variables[2]);
 
-            int firstInstruction = GetEmulationStartIndex(instructions, variables[1], variables[2]);
-            int lastInstruction =
+            var firstInstruction = GetEmulationStartIndex(instructions, variables[1], variables[2]);
+            var lastInstruction =
                 instructions.IndexOf(
                     instructions.First(
                         i => i.OpCode == OpCodes.Callvirt && i.Operand.ToString().Contains("GetCustomAttributes"))) - 4;
 
-            bool nativeMode = false;
+            var nativeMode = false;
             if (instructions[lastInstruction - 1].OpCode == OpCodes.Call) // x86 protection
             {
                 lastInstruction--; // don't try emulating native method
                 nativeMode = true;
             }
 
-            int result = EmulateManagedMethod(ctx.CreateMethod, firstInstruction, lastInstruction);
+            var result = EmulateManagedMethod(ctx.CreateMethod, firstInstruction, lastInstruction);
             if (nativeMode)
             {
-                MethodDef nativeMethod = (MethodDef) instructions[lastInstruction].Operand;
+                var nativeMethod = (MethodDef) instructions[lastInstruction].Operand;
                 if (!NativeMethods.Contains(nativeMethod))
                     NativeMethods.Add(nativeMethod);
                 result = EmulateNativeMethod(nativeMethod, result);
@@ -140,10 +141,10 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             result *= GetMagicNumber(field.CustomAttributes[0]);
             calledMethod = module.ResolveMemberRef(new MDToken(result).Rid);
 
-            if(calledMethod == null)
+            if (calledMethod == null)
                 throw new Exception();
 
-            int charNum = GetCharNum(instructions, parameters.Last());
+            var charNum = GetCharNum(instructions, parameters.Last());
             callOpcode = GetCallOpCode(calledMethod, charNum, ctx.ByteNum);
 
             ctx.CreateMethod.Body = originalMethod.Body; // restore
@@ -151,20 +152,17 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
         private OpCode GetCallOpCode(IMethod calledMethod, int charNum, int byteNum)
         {
-            if (calledMethod.ResolveMethodDef().IsStatic) {
-                return OpCodes.Call;
-            }
+            if (calledMethod.ResolveMethodDef().IsStatic) return OpCodes.Call;
 
-            byte charOpCode = (byte)(charNum ^ byteNum);
+            var charOpCode = (byte) (charNum ^ byteNum);
 
             if (charOpCode == 0x28)
                 return OpCodes.Call;
-            else if (charOpCode == 0x6F)
+            if (charOpCode == 0x6F)
                 return OpCodes.Callvirt;
-            else if (charOpCode == 0x73)
+            if (charOpCode == 0x73)
                 return OpCodes.Newobj;
-            else
-                throw new Exception();
+            throw new Exception();
         }
 
         private int EmulateNativeMethod(MethodDef externalMethod, int parameter)
@@ -173,29 +171,28 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             return nativeMethod.Execute(parameter);
         }
 
-        private int EmulateManagedMethod(MethodDef method, int startIndex, int endIndex, params Tuple<Parameter, int>[] parameters)
+        private int EmulateManagedMethod(MethodDef method, int startIndex, int endIndex,
+            params Tuple<Parameter, int>[] parameters)
         {
             _instructionEmulator.Initialize(method, false);
-            foreach(var parameter in parameters)
+            foreach (var parameter in parameters)
                 _instructionEmulator.SetArg(parameter.Item1, new Int32Value(parameter.Item2));
 
-            for (int i = startIndex; i < endIndex; i++) {
-                _instructionEmulator.Emulate(method.Body.Instructions[i]);
-            }
+            for (var i = startIndex; i < endIndex; i++) _instructionEmulator.Emulate(method.Body.Instructions[i]);
 
             return ((Int32Value) _instructionEmulator.Pop()).Value;
         }
 
         private int GetMagicNumber(CustomAttribute customAttribute)
         {
-            TypeDef attributeType = customAttribute.AttributeType.ResolveTypeDef();
-            if(!AttributeTypes.Contains(attributeType))
+            var attributeType = customAttribute.AttributeType.ResolveTypeDef();
+            if (!AttributeTypes.Contains(attributeType))
                 AttributeTypes.Add(attributeType);
 
             var ctor = attributeType.FindConstructors().First();
             DeobfuscateIfNeeded(ctor);
 
-            int magicNum = Convert.ToInt32(customAttribute.ConstructorArguments[0].Value);
+            var magicNum = Convert.ToInt32(customAttribute.ConstructorArguments[0].Value);
             var parameter = new Tuple<Parameter, int>();
             parameter.Item1 = ctor.Parameters[1];
             parameter.Item2 = magicNum;
@@ -225,7 +222,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 	       0x000005C6 FE0E0200      IL_002E: stloc.2 */
         private int GetEmulationStartIndex(IList<Instruction> instructions, Local localArray, Local localArraySize)
         {
-            for (int i = 0; i < instructions.Count; i++)
+            for (var i = 0; i < instructions.Count; i++)
             {
                 var instrs = DotNetUtils.GetInstructions(instructions, i, OpCodes.Callvirt, OpCodes.Stloc,
                     OpCodes.Ldloc, OpCodes.Ldlen, OpCodes.Conv_I4, OpCodes.Stloc);
@@ -234,11 +231,11 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     continue;
                 if (!instrs[0].Operand.ToString().Contains("ResolveSignature"))
                     continue;
-                if ((Local)instrs[1].Operand != localArray)
+                if ((Local) instrs[1].Operand != localArray)
                     continue;
-                if ((Local)instrs[2].Operand != localArray)
+                if ((Local) instrs[2].Operand != localArray)
                     continue;
-                if ((Local)instrs[5].Operand != localArraySize)
+                if ((Local) instrs[5].Operand != localArraySize)
                     continue;
 
                 return i + 6;
@@ -250,7 +247,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 	       0x000008F4 61            IL_02BC: xor */
         private int GetCharNum(IList<Instruction> instructions, Parameter byteParam)
         {
-            for (int i = 0; i < instructions.Count; i++)
+            for (var i = 0; i < instructions.Count; i++)
             {
                 var instrs = DotNetUtils.GetInstructions(instructions, i, OpCodes.Ldarg, OpCodes.Xor);
 
@@ -268,7 +265,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
         private void ReplaceFieldNameChars(ref IList<Instruction> instructions, string fieldName, Local fieldLocal)
         {
             bool foundInstrs;
-            do {
+            do
+            {
                 foundInstrs = ReplaceFieldNameChar(ref instructions, fieldName, fieldLocal);
             } while (foundInstrs);
         }
@@ -279,28 +277,28 @@ namespace de4dot.code.deobfuscators.ConfuserEx
            0x0000037C 6F1600000A    IL_0084: callvirt */
         private bool ReplaceFieldNameChar(ref IList<Instruction> instructions, string fieldName, Local fieldLocal)
         {
-            for (int i = 0; i < instructions.Count; i++)
+            for (var i = 0; i < instructions.Count; i++)
             {
                 var instrs = DotNetUtils.GetInstructions(instructions, i, OpCodes.Ldloc, OpCodes.Callvirt,
                     OpCodes.Ldc_I4, OpCodes.Callvirt);
 
-                if(instrs == null)
+                if (instrs == null)
                     continue;
-                if ((Local)instrs[0].Operand != fieldLocal)
+                if ((Local) instrs[0].Operand != fieldLocal)
                     continue;
                 if (!instrs[1].Operand.ToString().Contains("get_Name"))
                     continue;
                 if (!instrs[3].Operand.ToString().Contains("get_Chars"))
                     continue;
 
-                int charIndex = (int)instrs[2].Operand;
+                var charIndex = (int) instrs[2].Operand;
                 int @char = fieldName[charIndex];
 
                 instructions[i].OpCode = OpCodes.Ldc_I4;
                 instructions[i].Operand = @char;
-                instructions[i+1].OpCode = OpCodes.Nop;
-                instructions[i+2].OpCode = OpCodes.Nop;
-                instructions[i+3].OpCode = OpCodes.Nop;
+                instructions[i + 1].OpCode = OpCodes.Nop;
+                instructions[i + 2].OpCode = OpCodes.Nop;
+                instructions[i + 3].OpCode = OpCodes.Nop;
                 return true;
             }
             return false;
@@ -315,28 +313,29 @@ namespace de4dot.code.deobfuscators.ConfuserEx
         private void InlineArrays(ref IList<Instruction> instructions, byte[] values, Local localArray, Local localInt)
         {
             bool foundInstrs;
-            int i = 0;
-            do {
+            var i = 0;
+            do
+            {
                 foundInstrs = InlineArray(ref instructions, values[i++], localArray, localInt);
             } while (i < 4 && foundInstrs);
         }
 
         private bool InlineArray(ref IList<Instruction> instructions, int value, Local localArray, Local localInt)
         {
-            for (int i = 0; i < instructions.Count; i++)
+            for (var i = 0; i < instructions.Count; i++)
             {
                 var instrs = DotNetUtils.GetInstructions(instructions, i, OpCodes.Ldloc, OpCodes.Ldloc, OpCodes.Ldc_I4,
                     OpCodes.Sub, OpCodes.Dup, OpCodes.Stloc, OpCodes.Ldelem_U1);
 
                 if (instrs == null)
                     continue;
-                if ((Local)instrs[0].Operand != localArray)
+                if ((Local) instrs[0].Operand != localArray)
                     continue;
-                if ((Local)instrs[1].Operand != localInt)
+                if ((Local) instrs[1].Operand != localInt)
                     continue;
-                if ((int)instrs[2].Operand != 1)
+                if ((int) instrs[2].Operand != 1)
                     continue;
-                if ((Local)instrs[5].Operand != localInt)
+                if ((Local) instrs[5].Operand != localInt)
                     continue;
 
                 instructions[i].OpCode = OpCodes.Ldc_I4;
@@ -358,17 +357,18 @@ namespace de4dot.code.deobfuscators.ConfuserEx
            0x00000374 0C            IL_007C: stloc.2 */
         private void RemoveDecrementorBlock(ref IList<Instruction> instructions, Local localInt)
         {
-            for (int i = 0; i < instructions.Count; i++)
+            for (var i = 0; i < instructions.Count; i++)
             {
-                var instrs = DotNetUtils.GetInstructions(instructions, i, OpCodes.Ldloc, OpCodes.Ldc_I4, OpCodes.Sub, OpCodes.Stloc);
+                var instrs = DotNetUtils.GetInstructions(instructions, i, OpCodes.Ldloc, OpCodes.Ldc_I4, OpCodes.Sub,
+                    OpCodes.Stloc);
 
                 if (instrs == null)
                     continue;
-                if ((Local)instrs[0].Operand != localInt)
-                    continue;  
-                if ((int)instrs[1].Operand != 1)
+                if ((Local) instrs[0].Operand != localInt)
                     continue;
-                if ((Local)instrs[3].Operand != localInt)
+                if ((int) instrs[1].Operand != 1)
+                    continue;
+                if ((Local) instrs[3].Operand != localInt)
                     continue;
 
                 instructions[i].OpCode = OpCodes.Nop;
@@ -386,18 +386,19 @@ namespace de4dot.code.deobfuscators.ConfuserEx
            0x000005DE 6F1400000A    IL_0046: callvirt instance int32[mscorlib] System.Reflection.MemberInfo::get_MetadataToken() */
         private void ReplaceMetadataToken(ref IList<Instruction> instructions, int metadataToken, Local fieldLocal)
         {
-            for (int i = 0; i < instructions.Count; i++)
+            for (var i = 0; i < instructions.Count; i++)
             {
-                var instrs = DotNetUtils.GetInstructions(instructions, i, OpCodes.Ldloc, OpCodes.Callvirt, OpCodes.Ldc_I4,
+                var instrs = DotNetUtils.GetInstructions(instructions, i, OpCodes.Ldloc, OpCodes.Callvirt,
+                    OpCodes.Ldc_I4,
                     OpCodes.Ldelem_Ref, OpCodes.Callvirt);
 
                 if (instrs == null)
                     continue;
-                if ((Local)instrs[0].Operand != fieldLocal)
+                if ((Local) instrs[0].Operand != fieldLocal)
                     continue;
                 if (!instrs[1].Operand.ToString().Contains("GetOptionalCustomModifiers"))
                     continue;
-                if ((int)instrs[2].Operand != 0)
+                if ((int) instrs[2].Operand != 0)
                     continue;
                 if (!instrs[4].Operand.ToString().Contains("get_MetadataToken"))
                     continue;

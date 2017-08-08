@@ -1,65 +1,41 @@
-﻿using de4dot.blocks;
-using dnlib.DotNet;
-using dnlib.DotNet.Emit;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using System.Text;
+using de4dot.blocks;
+using dnlib.DotNet;
+using dnlib.DotNet.Emit;
 
 namespace de4dot.code.deobfuscators.ConfuserEx
 {
     public class ResourceDecrypter
     {
-        TypeDef arrayType;
-        MethodDef resourceDecInitMethod, assembyResolveMethod;
-        FieldDef arrayField, asmField;
-        byte[] decryptedBytes;
+        private FieldDef _arrayField, _asmField;
 
-        bool canRemoveLzma = true;
+        private byte[] _decryptedBytes;
+        private readonly ISimpleDeobfuscator _deobfuscator;
+        private readonly MethodDef _lzmaMethod;
 
-        public bool CanRemoveLzma
-        {
-            get { return canRemoveLzma; }
-        }
+        private readonly ModuleDef _module;
 
-        public TypeDef Type
-        {
-            get { return arrayType; }
-        }
-        public MethodDef Method
-        {
-            get { return resourceDecInitMethod; }
-        }
-        public MethodDef AssembyResolveMethod
-        {
-            get { return assembyResolveMethod; }
-        }
-        public List<FieldDef> Fields
-        {
-            get { return new List<FieldDef>() { arrayField, asmField }; }
-        }
-        public bool Detected
-        {
-            get
-            {
-                return resourceDecInitMethod != null && resourceDecInitMethod != null
-                  && decryptedBytes != null && arrayField != null && asmField != null;
-            }
-        }
-
-        ModuleDef module;
-        MethodDef lzmaMethod;
-        ISimpleDeobfuscator deobfuscator;
         public ResourceDecrypter(ModuleDef module, MethodDef lzmaMethod, ISimpleDeobfuscator deobfsucator)
         {
-            this.module = module;
-            this.lzmaMethod = lzmaMethod;
-            this.deobfuscator = deobfsucator;
+            this._module = module;
+            this._lzmaMethod = lzmaMethod;
+            _deobfuscator = deobfsucator;
         }
+
+        public bool CanRemoveLzma { get; private set; } = true;
+
+        public TypeDef Type { get; private set; }
+        public MethodDef Method { get; private set; }
+        public MethodDef AssembyResolveMethod { get; private set; }
+        public List<FieldDef> Fields => new List<FieldDef> {_arrayField, _asmField};
+
+        public bool Detected => Method != null && _decryptedBytes != null && _arrayField != null && _asmField != null;
 
         public void Find()
         {
-            var moduleCctor = DotNetUtils.GetModuleTypeCctor(module);
+            var moduleCctor = DotNetUtils.GetModuleTypeCctor(_module);
             if (moduleCctor == null)
                 return;
             foreach (var inst in moduleCctor.Body.Instructions)
@@ -73,14 +49,14 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     continue;
                 if (!DotNetUtils.IsMethod(method, "System.Void", "()"))
                     continue;
-                deobfuscator.Deobfuscate(method, SimpleDeobfuscatorFlags.Force);
-                if (!isResDecryptInit(method))
+                _deobfuscator.Deobfuscate(method, SimpleDeobfuscatorFlags.Force);
+                if (!IsResDecryptInit(method))
                     continue;
-                resourceDecInitMethod = method;
+                Method = method;
             }
         }
 
-        bool isResDecryptInit(MethodDef method)
+        private bool IsResDecryptInit(MethodDef method)
         {
             var instr = method.Body.Instructions;
 
@@ -89,7 +65,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             if (!instr[0].IsLdcI4())
                 return false;
-            if (!instr[1].IsStloc())  //uint num = 96u;
+            if (!instr[1].IsStloc()) //uint num = 96u;
                 return false;
 
             if (!instr[2].IsLdcI4())
@@ -113,9 +89,11 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return false;
             if (instr[6].OpCode != OpCodes.Call)
                 return false;
-            if (instr[6].Operand.ToString() != "System.Void System.Runtime.CompilerServices.RuntimeHelpers::InitializeArray(System.Array,System.RuntimeFieldHandle)")
+            if (instr[6].Operand.ToString() !=
+                "System.Void System.Runtime.CompilerServices.RuntimeHelpers::InitializeArray(System.Array,System.RuntimeFieldHandle)"
+            )
                 return false;
-            if (!instr[7].IsStloc())  // uint[] array = new uint[] {.....};
+            if (!instr[7].IsStloc()) // uint[] array = new uint[] {.....};
                 return false;
 
             var l = instr.Count;
@@ -123,13 +101,14 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return false;
             if (instr[l - 9].OpCode != OpCodes.Call)
                 return false;
-            if (instr[l - 9].Operand != lzmaMethod)
+            if (instr[l - 9].Operand != _lzmaMethod)
                 return false;
             if (instr[l - 8].OpCode != OpCodes.Call)
                 return false;
-            if (instr[l - 8].Operand.ToString() != "System.Reflection.Assembly System.Reflection.Assembly::Load(System.Byte[])")
+            if (instr[l - 8].Operand.ToString() !=
+                "System.Reflection.Assembly System.Reflection.Assembly::Load(System.Byte[])")
                 return false;
-            if (instr[l - 7].OpCode != OpCodes.Stsfld)  //<Module>.assembly_0 = Assembly.Load(array4);
+            if (instr[l - 7].OpCode != OpCodes.Stsfld) //<Module>.assembly_0 = Assembly.Load(array4);
                 return false;
             var asField = instr[l - 7].Operand as FieldDef;
             if (asField == null)
@@ -150,84 +129,89 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return false;
             if (instr[l - 3].OpCode != OpCodes.Newobj)
                 return false;
-            if (instr[l - 2].OpCode != OpCodes.Callvirt)  //AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler(<Module>.smethod_1);
+            if (instr[l - 2].OpCode != OpCodes.Callvirt
+            ) //AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler(<Module>.smethod_1);
                 return false;
             try
             {
                 DecryptArray(ConvertArray<uint, byte>(aField.InitialValue));
             }
-            catch { canRemoveLzma = false; return false; }
-            arrayField = aField;
-            arrayType = DotNetUtils.GetType(module, aField.FieldSig.Type);
-            asmField = asField;
-            assembyResolveMethod = mtd;
+            catch
+            {
+                CanRemoveLzma = false;
+                return false;
+            }
+            _arrayField = aField;
+            Type = DotNetUtils.GetType(_module, aField.FieldSig.Type);
+            _asmField = asField;
+            AssembyResolveMethod = mtd;
             return true;
         }
+
         private T[] ConvertArray<T, T1>(T1[] array)
         {
-            int l = Marshal.SizeOf(typeof(T));
-            int l1 = Marshal.SizeOf(typeof(T1));
-            var buffer = new T[(array.Length * l1) / l];
+            var l = Marshal.SizeOf(typeof(T));
+            var l1 = Marshal.SizeOf(typeof(T1));
+            var buffer = new T[array.Length * l1 / l];
             Buffer.BlockCopy(array, 0, buffer, 0, array.Length * l1);
             return buffer;
         }
+
         private void DecryptArray(uint[] array) //TODO: Automatic detection
         {
-            int num = array.Length;
-            uint[] array2 = new uint[16];
-            uint num2 = 825993394u;
-            for (int i = 0; i < 16; i++)
+            var num = array.Length;
+            var array2 = new uint[16];
+            var num2 = 825993394u;
+            for (var i = 0; i < 16; i++)
             {
                 num2 ^= num2 >> 13;
                 num2 ^= num2 << 25;
                 num2 ^= num2 >> 27;
                 array2[i] = num2;
             }
-            int num3 = 0;
-            int num4 = 0;
-            uint[] array3 = new uint[16];
-            byte[] array4 = new byte[num * 4u];
-            while ((long)num3 < (long)((ulong)num))
+            var num3 = 0;
+            var num4 = 0;
+            var array3 = new uint[16];
+            var array4 = new byte[num * 4u];
+            while (num3 < (long) (ulong) num)
             {
-                for (int j = 0; j < 16; j++)
-                {
+                for (var j = 0; j < 16; j++)
                     array3[j] = array[num3 + j];
-                }
-                array3[0] = (array3[0] ^ array2[0]);
-                array3[1] = (array3[1] ^ array2[1]);
-                array3[2] = (array3[2] ^ array2[2]);
-                array3[3] = (array3[3] ^ array2[3]);
-                array3[4] = (array3[4] ^ array2[4]);
-                array3[5] = (array3[5] ^ array2[5]);
-                array3[6] = (array3[6] ^ array2[6]);
-                array3[7] = (array3[7] ^ array2[7]);
-                array3[8] = (array3[8] ^ array2[8]);
-                array3[9] = (array3[9] ^ array2[9]);
-                array3[10] = (array3[10] ^ array2[10]);
-                array3[11] = (array3[11] ^ array2[11]);
-                array3[12] = (array3[12] ^ array2[12]);
-                array3[13] = (array3[13] ^ array2[13]);
-                array3[14] = (array3[14] ^ array2[14]);
-                array3[15] = (array3[15] ^ array2[15]);
-                for (int k = 0; k < 16; k++)
+                array3[0] = array3[0] ^ array2[0];
+                array3[1] = array3[1] ^ array2[1];
+                array3[2] = array3[2] ^ array2[2];
+                array3[3] = array3[3] ^ array2[3];
+                array3[4] = array3[4] ^ array2[4];
+                array3[5] = array3[5] ^ array2[5];
+                array3[6] = array3[6] ^ array2[6];
+                array3[7] = array3[7] ^ array2[7];
+                array3[8] = array3[8] ^ array2[8];
+                array3[9] = array3[9] ^ array2[9];
+                array3[10] = array3[10] ^ array2[10];
+                array3[11] = array3[11] ^ array2[11];
+                array3[12] = array3[12] ^ array2[12];
+                array3[13] = array3[13] ^ array2[13];
+                array3[14] = array3[14] ^ array2[14];
+                array3[15] = array3[15] ^ array2[15];
+                for (var k = 0; k < 16; k++)
                 {
-                    uint num5 = array3[k];
-                    array4[num4++] = (byte)num5;
-                    array4[num4++] = (byte)(num5 >> 8);
-                    array4[num4++] = (byte)(num5 >> 16);
-                    array4[num4++] = (byte)(num5 >> 24);
+                    var num5 = array3[k];
+                    array4[num4++] = (byte) num5;
+                    array4[num4++] = (byte) (num5 >> 8);
+                    array4[num4++] = (byte) (num5 >> 16);
+                    array4[num4++] = (byte) (num5 >> 24);
                     array2[k] ^= num5;
                 }
                 num3 += 16;
             }
-            decryptedBytes = Lzma.Decompress(array4);
+            _decryptedBytes = Lzma.Decompress(array4);
         }
 
         private bool IsAssembyResolveMethod(MethodDef method, FieldDef field)
         {
             if (DotNetUtils.IsMethod(method, "", "()"))
                 return false;
-            deobfuscator.Deobfuscate(method, SimpleDeobfuscatorFlags.Force);
+            _deobfuscator.Deobfuscate(method, SimpleDeobfuscatorFlags.Force);
 
             var instr = method.Body.Instructions;
             if (instr.Count != 10)
@@ -271,23 +255,27 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             ModuleDef newModule;
             try
             {
-                newModule = ModuleDefMD.Load(decryptedBytes);
+                newModule = ModuleDefMD.Load(_decryptedBytes);
             }
-            catch { canRemoveLzma = false; return; }
-            List<Resource> toRemove = new List<Resource>();
-            List<Resource> toAdd = new List<Resource>();
-            foreach (var cryptedResource in module.Resources)
-                foreach (var resource in newModule.Resources)
-                    if (cryptedResource.Name == resource.Name)
-                    {
-                        toRemove.Add(cryptedResource);
-                        toAdd.Add(resource);
-                    }
+            catch
+            {
+                CanRemoveLzma = false;
+                return;
+            }
+            var toRemove = new List<Resource>();
+            var toAdd = new List<Resource>();
+            foreach (var cryptedResource in _module.Resources)
+            foreach (var resource in newModule.Resources)
+                if (cryptedResource.Name == resource.Name)
+                {
+                    toRemove.Add(cryptedResource);
+                    toAdd.Add(resource);
+                }
 
             foreach (var resToRemove in toRemove)
-                module.Resources.Remove(resToRemove);
+                _module.Resources.Remove(resToRemove);
             foreach (var resToAdd in toAdd)
-                module.Resources.Add(resToAdd);
+                _module.Resources.Add(resToAdd);
         }
     }
 }

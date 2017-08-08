@@ -1,6 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using System.Collections.Generic;
 using de4dot.blocks;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
@@ -128,7 +126,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
         public static bool IsValidInstr(this Instr instr)
         {
-            return IsArithmetical(instr) || instr.IsConv() || IsLdc(instr) || IsLoc(instr) || instr.OpCode == OpCodes.Dup;
+            return IsArithmetical(instr) || instr.IsConv() || IsLdc(instr) || IsLoc(instr) ||
+                   instr.OpCode == OpCodes.Dup;
         }
 
         public static bool IsDup(this Block block)
@@ -188,7 +187,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return false;
             if (!DotNetUtils.IsMethod(method, "System.Int32", "(System.Int32)"))
                 return false;
-            for (int i = switchData.IsKeyHardCoded ? 2 : 1; i < instr.Count - 1; i++)
+            for (var i = switchData.IsKeyHardCoded ? 2 : 1; i < instr.Count - 1; i++)
                 if (!instr[i].IsValidInstr())
                     return false;
 
@@ -238,8 +237,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             var sources = block.Sources;
             if (sources.Count != 2)
                 return false;
-            if (!sources[0].IsDup() || !(sources[1]).IsDup()) //TODO: Case without DUP?
-                 return false;
+            if (!sources[0].IsDup() || !sources[1].IsDup()) //TODO: Case without DUP?
+                return false;
             if (sources[0].CountTargets() > 1 || sources[1].CountTargets() > 1)
                 return false;
             if (sources[0].FallThrough != block || sources[1].FallThrough != block)
@@ -256,16 +255,11 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
         public static List<Block> GetTernaryPredicates(this List<Block> switchCaseBlocks)
         {
-            List<Block> ternaryPredicates = new List<Block>();
+            var ternaryPredicates = new List<Block>();
 
-            foreach (Block preBlock in switchCaseBlocks)
-            {
-                if (IsTernary(preBlock))
-                {
-                    // switchCaseBlock -> 2x sourceBlock -> ternaryPredicateBlock
+            foreach (var preBlock in switchCaseBlocks)
+                if (IsTernary(preBlock)) // switchCaseBlock -> 2x sourceBlock -> ternaryPredicateBlock
                     ternaryPredicates.Add(preBlock.Sources[0].Sources[0]);
-                }
-            }
 
             return ternaryPredicates;
         }

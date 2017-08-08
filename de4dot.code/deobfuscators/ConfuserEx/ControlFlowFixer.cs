@@ -9,9 +9,9 @@ using dnlib.DotNet.Emit;
 
 namespace de4dot.code.deobfuscators.ConfuserEx
 {
-    class ControlFlowFixer : IBlocksDeobfuscator
+    internal class ControlFlowFixer : IBlocksDeobfuscator
     {
-        public bool ExecuteIfNotModified { get; }
+        public bool ExecuteIfNotModified { get; } = false;
         public List<MethodDef> NativeMethods = new List<MethodDef>();
 
         private readonly InstructionEmulator _instructionEmulator = new InstructionEmulator();

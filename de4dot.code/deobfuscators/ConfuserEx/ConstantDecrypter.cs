@@ -1,19 +1,26 @@
-﻿using de4dot.blocks;
-using dnlib.DotNet;
-using dnlib.DotNet.Emit;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using de4dot.blocks;
 using de4dot.blocks.cflow;
 using de4dot.code.deobfuscators.ConfuserEx.x86;
+using dnlib.DotNet;
+using dnlib.DotNet.Emit;
 
 namespace de4dot.code.deobfuscators.ConfuserEx
 {
     public class ConstantDecrypterBase
     {
-        private X86Method _nativeMethod;
         private readonly InstructionEmulator _instructionEmulator = new InstructionEmulator();
+        private X86Method _nativeMethod;
+
+        public MethodDef Method { get; set; }
+        public MethodDef NativeMethod { get; set; }
+        public byte[] Decrypted { get; set; }
+        public uint Magic1 { get; set; }
+        public uint Magic2 { get; set; }
+        public bool CanRemove { get; set; } = true;
 
         private int? CalculateKey()
         {
@@ -23,99 +30,93 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return null;
 
             _instructionEmulator.Pop();
-            int result = _nativeMethod.Execute(((Int32Value)popValue).Value);
+            var result = _nativeMethod.Execute(((Int32Value) popValue).Value);
             return result;
         }
 
-        public MethodDef Method { get; set; }
-        public MethodDef NativeMethod { get; set; }
-        public byte[] Decrypted { get; set; }
-        public uint Magic1 { get; set; }
-        public uint Magic2 { get; set; }
-        public bool CanRemove { get; set; } = true;
-
         private uint CalculateMagic(uint index)
         {
-            _instructionEmulator.Push(new Int32Value((int)index));
+            _instructionEmulator.Push(new Int32Value((int) index));
             _nativeMethod = new X86Method(NativeMethod, Method.Module as ModuleDefMD); //TODO: Possible null
-            int? key = CalculateKey();
+            var key = CalculateKey();
 
-            uint uint_0 = (uint) key.Value;
+            var uint_0 = (uint) key.Value;
             uint_0 &= 0x3fffffff;
             uint_0 <<= 2;
             return uint_0;
         }
+
         public string DecryptString(uint index)
         {
             index = CalculateMagic(index);
-            int count = BitConverter.ToInt32(Decrypted, (int)index);
-            return string.Intern(Encoding.UTF8.GetString(Decrypted, (int)index + 4, count));
+            var count = BitConverter.ToInt32(Decrypted, (int) index);
+            return string.Intern(Encoding.UTF8.GetString(Decrypted, (int) index + 4, count));
         }
+
         public T DecryptConstant<T>(uint index)
         {
             index = CalculateMagic(index);
-            T[] array = new T[1];
-            Buffer.BlockCopy(Decrypted, (int)index, array, 0, Marshal.SizeOf(typeof(T)));
+            var array = new T[1];
+            Buffer.BlockCopy(Decrypted, (int) index, array, 0, Marshal.SizeOf(typeof(T)));
             return array[0];
         }
+
         public byte[] DecryptArray(uint index)
         {
             index = CalculateMagic(index);
-            int count = BitConverter.ToInt32(Decrypted, (int)index);
+            var count = BitConverter.ToInt32(Decrypted, (int) index);
             //int lengt = BitConverter.ToInt32(Decrypted, (int)index+4);  we actualy dont need that
-            byte[] buffer = new byte[count - 4];
-            Buffer.BlockCopy(Decrypted, (int)index + 8, buffer, 0, count - 4);
+            var buffer = new byte[count - 4];
+            Buffer.BlockCopy(Decrypted, (int) index + 8, buffer, 0, count - 4);
             return buffer;
         }
     }
 
     public class ConstantsDecrypter
     {
-        TypeDef arrayType;
-        MethodDef constantsDecInitMethod;
-        FieldDef decryptedField, arrayField;
-        List<ConstantDecrypterBase> constantDecrpers = new List<ConstantDecrypterBase>();
-        byte[] decryptedBytes;
-        bool canRemoveLzma = true;
+        private readonly ISimpleDeobfuscator _deobfuscator;
+        private readonly MethodDef _lzmaMethod;
 
-        public bool CanRemoveLzma
-        {
-            get { return canRemoveLzma; }
-        }
-        public TypeDef Type
-        {
-            get { return arrayType; }
-        }
-        public MethodDef Method
-        {
-            get { return constantsDecInitMethod; }
-        }
-        public List<FieldDef> Fields
-        {
-            get { return new List<FieldDef>() { decryptedField, arrayField }; }
-        }
-        public List<ConstantDecrypterBase> Decrypters
-        {
-            get { return constantDecrpers; }
-        }
-        public bool Detected
-        {
-            get { return constantsDecInitMethod != null && decryptedBytes != null && constantDecrpers.Count != 0 && decryptedField != null && arrayField != null; }
-        }
+        private readonly ModuleDef _module;
 
-        ModuleDef module;
-        MethodDef lzmaMethod;
-        ISimpleDeobfuscator deobfuscator;
+        private readonly string[] _strDecryptCalledMethods =
+        {
+            "System.Text.Encoding System.Text.Encoding::get_UTF8()",
+            "System.String System.Text.Encoding::GetString(System.Byte[],System.Int32,System.Int32)",
+            "System.Array System.Array::CreateInstance(System.Type,System.Int32)",
+            "System.String System.String::Intern(System.String)",
+            "System.Void System.Buffer::BlockCopy(System.Array,System.Int32,System.Array,System.Int32,System.Int32)",
+            "System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)",
+            "System.Type System.Type::GetElementType()"
+        };
+
+        private byte[] _decryptedBytes;
+        private FieldDef _decryptedField, _arrayField;
+        internal TypeDef ArrayType;
+
         public ConstantsDecrypter(ModuleDef module, MethodDef lzmaMethod, ISimpleDeobfuscator deobfsucator)
         {
-            this.module = module;
-            this.lzmaMethod = lzmaMethod;
-            this.deobfuscator = deobfsucator;
+            _module = module;
+            _lzmaMethod = lzmaMethod;
+            _deobfuscator = deobfsucator;
         }
+
+        public bool CanRemoveLzma { get; private set; } = true;
+
+        public TypeDef Type => ArrayType;
+
+        public MethodDef Method { get; private set; }
+
+        public List<FieldDef> Fields => new List<FieldDef> {_decryptedField, _arrayField};
+
+        public List<ConstantDecrypterBase> Decrypters { get; } = new List<ConstantDecrypterBase>();
+
+        public bool Detected => Method != null && _decryptedBytes != null && Decrypters.Count != 0 &&
+                                _decryptedField != null && _arrayField != null;
 
         public void Find()
         {
-            var moduleCctor = DotNetUtils.GetModuleTypeCctor(module);
+            var moduleCctor = DotNetUtils.GetModuleTypeCctor(_module);
             if (moduleCctor == null)
                 return;
             foreach (var inst in moduleCctor.Body.Instructions)
@@ -124,20 +125,20 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     continue;
                 if (!(inst.Operand is MethodDef))
                     continue;
-                var method = inst.Operand as MethodDef;
+                var method = (MethodDef) inst.Operand;
                 if (!method.HasBody || !method.IsStatic)
                     continue;
                 if (!DotNetUtils.IsMethod(method, "System.Void", "()"))
                     continue;
-                deobfuscator.Deobfuscate(method, SimpleDeobfuscatorFlags.Force);
-                if (!isStrDecryptInit(method))
+                _deobfuscator.Deobfuscate(method, SimpleDeobfuscatorFlags.Force);
+                if (!IsStringDecrypterInit(method))
                     continue;
-                constantsDecInitMethod = method;
+                Method = method;
                 FindStringDecrypters(moduleCctor.DeclaringType);
             }
         }
 
-        bool isStrDecryptInit(MethodDef method)
+        private bool IsStringDecrypterInit(MethodDef method)
         {
             var instructions = method.Body.Instructions;
 
@@ -146,7 +147,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             if (!instructions[0].IsLdcI4())
                 return false;
-            if (!instructions[1].IsStloc())  //uint num = 96u;
+            if (!instructions[1].IsStloc()) //uint num = 96u;
                 return false;
 
             if (!instructions[2].IsLdcI4())
@@ -162,17 +163,17 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             if (instructions[5].OpCode != OpCodes.Ldtoken)
                 return false;
             var aField = instructions[5].Operand as FieldDef;
-            if (aField == null)
-                return false;
-            if (aField.InitialValue == null)
+            if (aField?.InitialValue == null)
                 return false;
             if (aField.Attributes != (FieldAttributes.Assembly | FieldAttributes.Static | FieldAttributes.HasFieldRVA))
                 return false;
             if (instructions[6].OpCode != OpCodes.Call)
                 return false;
-            if (instructions[6].Operand.ToString() != "System.Void System.Runtime.CompilerServices.RuntimeHelpers::InitializeArray(System.Array,System.RuntimeFieldHandle)")
+            if (instructions[6].Operand.ToString() !=
+                "System.Void System.Runtime.CompilerServices.RuntimeHelpers::InitializeArray(System.Array,System.RuntimeFieldHandle)"
+            )
                 return false;
-            if (!instructions[7].IsStloc())  // uint[] array = new uint[] {.....};
+            if (!instructions[7].IsStloc()) // uint[] array = new uint[] {.....};
                 return false;
 
             var l = instructions.Count;
@@ -180,9 +181,9 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return false;
             if (instructions[l - 3].OpCode != OpCodes.Call)
                 return false;
-            if (instructions[l - 3].Operand != lzmaMethod)
+            if (instructions[l - 3].Operand != _lzmaMethod)
                 return false;
-            if (instructions[l - 2].OpCode != OpCodes.Stsfld)  //<Module>.byte_0 = <Module>.smethod_0(array4);
+            if (instructions[l - 2].OpCode != OpCodes.Stsfld) //<Module>.byte_0 = <Module>.smethod_0(array4);
                 return false;
             var dField = instructions[l - 2].Operand as FieldDef;
             if (dField == null)
@@ -191,53 +192,56 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             {
                 DecryptArray(ConvertArray<uint, byte>(aField.InitialValue));
             }
-            catch (Exception e) { Console.WriteLine(e.Message); canRemoveLzma = false; return false; }
-            arrayField = aField;
-            arrayType = DotNetUtils.GetType(module, aField.FieldSig.Type);
-            decryptedField = dField;
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                CanRemoveLzma = false;
+                return false;
+            }
+            _arrayField = aField;
+            ArrayType = DotNetUtils.GetType(_module, aField.FieldSig.Type);
+            _decryptedField = dField;
             return true;
         }
 
-        private T[] ConvertArray<T, T1>(T1[] array)
+        private static T[] ConvertArray<T, T1>(T1[] array)
         {
-            int l = Marshal.SizeOf(typeof(T));
-            int l1 = Marshal.SizeOf(typeof(T1));
-            var buffer = new T[(array.Length * l1) / l];
+            var l = Marshal.SizeOf(typeof(T));
+            var l1 = Marshal.SizeOf(typeof(T1));
+            var buffer = new T[array.Length * l1 / l];
             Buffer.BlockCopy(array, 0, buffer, 0, array.Length * l1);
             return buffer;
         }
 
         private void DecryptArray(uint[] array) //TODO: Automatic detection
         {
-            uint num = 960u; // array size?
-            uint[] array2 = new uint[16];
-            uint num2 = 4136251032u;
-            for (int i = 0; i < 16; i++)
+            var num = 960u; // array size?
+            var array2 = new uint[16];
+            var num2 = 4136251032u;
+            for (var i = 0; i < 16; i++)
             {
                 num2 ^= num2 >> 12;
                 num2 ^= num2 << 25;
                 num2 ^= num2 >> 27;
                 array2[i] = num2;
             }
-            int num3 = 0;
-            int num4 = 0;
-            uint[] array3 = new uint[16];
-            byte[] array4 = new byte[num * 4u];
-            while ((long)num3 < (long)((ulong)num))
+            var num3 = 0;
+            var num4 = 0;
+            var array3 = new uint[16];
+            var array4 = new byte[num * 4u];
+            while (num3 < num)
             {
-                for (int j = 0; j < 16; j++)
-                {
+                for (var j = 0; j < 16; j++)
                     array3[j] = array[num3 + j];
-                }
-                uint num5 = array3[3] * 41u;
-                array3[11] = (array3[11] ^ 3634844963u);
-                uint num6 = array3[3] * 31u;
+                var num5 = array3[3] * 41u;
+                array3[11] = array3[11] ^ 3634844963u;
+                var num6 = array3[3] * 31u;
                 num6 += array3[9] * 47u;
                 num5 += array3[9] * 85u;
                 num5 += array3[10] * 149u;
-                uint num7 = array3[3] << 1;
+                var num7 = array3[3] << 1;
                 num7 += array3[3];
-                uint num8 = array3[3] << 1;
+                var num8 = array3[3] << 1;
                 num8 += array3[3] << 3;
                 num7 += array3[9] << 3;
                 num8 += array3[9] * 13u;
@@ -245,7 +249,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 num6 += array3[10] * 71u;
                 num7 += array3[10] << 1;
                 num6 += array3[1] * 81u;
-                array3[4] = (array3[4] ^ ~array3[6]);
+                array3[4] = array3[4] ^ ~array3[6];
                 num8 += array3[10] << 1;
                 num7 += array3[10] << 4;
                 array3[9] = num6;
@@ -257,11 +261,11 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 num6 = array3[7] * 19u;
                 array3[10] = num7;
                 num6 += array3[8] * 28u;
-                array3[14] = (array3[14] ^ array3[0]);
+                array3[14] = array3[14] ^ array3[0];
                 array3[3] = num8;
                 num6 += array3[12] << 6;
                 array3[1] = num5;
-                array3[2] = (array3[2] ^ array2[2]);
+                array3[2] = array3[2] ^ array2[2];
                 num5 = array3[7] * 28u;
                 num5 += array3[8] << 2;
                 num8 = array3[7] << 1;
@@ -290,53 +294,53 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 num6 = array3[15] >> 22;
                 array3[15] = array3[15] << 10;
                 num8 = array3[1] >> 21;
-                array3[15] = (array3[15] | num6);
-                array3[12] = (array3[12] ^ array2[12]);
-                num6 = (array3[2] & 3262151220u);
+                array3[15] = array3[15] | num6;
+                array3[12] = array3[12] ^ array2[12];
+                num6 = array3[2] & 3262151220u;
                 array3[1] = array3[1] << 11;
-                array3[1] = (array3[1] | num8);
+                array3[1] = array3[1] | num8;
                 array3[7] = array3[7] << 11;
                 array3[0] = array3[0] - array3[14];
                 num7 = array3[13] << 4;
                 num8 = array3[3] * 954284655u;
                 array3[3] = array3[5];
                 array3[5] = num8 * 3102958735u;
-                array3[7] = (array3[7] | num5);
+                array3[7] = array3[7] | num5;
                 num5 = array3[10] << 4;
                 num8 = array3[9] * 2468501497u;
-                array3[2] = (array3[2] & 1032816075u);
+                array3[2] = array3[2] & 1032816075u;
                 array3[13] = array3[13] >> 28;
-                array3[13] = (array3[13] | num7);
+                array3[13] = array3[13] | num7;
                 array3[7] = array3[7] - 888060325u;
-                array3[2] = (array3[2] | (array3[8] & 3262151220u));
+                array3[2] = array3[2] | (array3[8] & 3262151220u);
                 array3[12] = array3[12] * 4056148675u;
                 array3[9] = array3[13];
                 num7 = array3[6] << 5;
                 array3[13] = num8 * 1746582089u;
                 array3[6] = array3[6] >> 27;
-                array3[6] = (array3[6] | num7);
-                array3[8] = (array3[8] & 1032816075u);
-                array3[7] = (array3[7] ^ array2[7]);
+                array3[6] = array3[6] | num7;
+                array3[8] = array3[8] & 1032816075u;
+                array3[7] = array3[7] ^ array2[7];
                 num5 += array3[11] * 46u;
                 num6 *= 869722291u;
                 num8 = array3[10] << 1;
                 num5 += array3[3] * 92u;
                 num5 += array3[5] * 149u;
                 array3[7] = array3[7] - 3922202313u;
-                array3[8] = (array3[8] | num6 * 2576221819u);
+                array3[8] = array3[8] | (num6 * 2576221819u);
                 num8 += array3[11] * 15u;
                 num8 += array3[3] * 37u;
                 num6 = array3[10] * 7u;
-                array3[8] = (array3[8] ^ 1878284212u);
+                array3[8] = array3[8] ^ 1878284212u;
                 num8 += array3[5] * 56u;
-                array3[9] = (array3[9] ^ array2[9]);
+                array3[9] = array3[9] ^ array2[9];
                 num7 = array3[10] << 3;
-                array3[6] = (array3[6] ^ 2841119440u);
+                array3[6] = array3[6] ^ 2841119440u;
                 num6 += array3[11] << 4;
-                array3[2] = (array3[2] ^ 217219923u);
+                array3[2] = array3[2] ^ 217219923u;
                 num7 += array3[10];
                 num6 += array3[3] * 29u;
-                array3[6] = (array3[6] ^ array2[6]);
+                array3[6] = array3[6] ^ array2[6];
                 num7 += array3[11] * 26u;
                 num7 += array3[3] * 52u;
                 num6 += array3[5] * 49u;
@@ -344,24 +348,24 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 array3[3] = num5;
                 array3[10] = num6;
                 num6 = array3[1] * 15u;
-                array3[12] = (array3[12] ^ 1080861703u);
+                array3[12] = array3[12] ^ 1080861703u;
                 array3[5] = num8;
-                num5 = (array3[4] & 3659960635u);
+                num5 = array3[4] & 3659960635u;
                 num6 += array3[12] << 1;
-                array3[4] = (array3[4] & 635006660u);
-                array3[4] = (array3[4] | (array3[9] & 3659960635u));
+                array3[4] = array3[4] & 635006660u;
+                array3[4] = array3[4] | (array3[9] & 3659960635u);
                 num5 *= 1676034815u;
                 array3[11] = num7;
                 num7 = array3[1] * 19u;
                 num6 += array3[12] << 4;
-                array3[9] = (array3[9] & 635006660u);
+                array3[9] = array3[9] & 635006660u;
                 num6 += array3[3] << 6;
                 num7 += array3[12] * 27u;
                 array3[5] = array3[5] - array3[8];
-                array3[9] = (array3[9] | num5 * 1267776767u);
+                array3[9] = array3[9] | (num5 * 1267776767u);
                 num5 = array3[1] << 2;
                 num5 += array3[1];
-                array3[13] = (array3[13] ^ array2[13]);
+                array3[13] = array3[13] ^ array2[13];
                 num8 = array3[1];
                 num6 += array3[3];
                 num5 += array3[12] << 3;
@@ -377,53 +381,53 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 num8 += array3[15] << 1;
                 num8 += array3[15];
                 array3[3] = num6;
-                array3[0] = (array3[0] ^ array3[13]);
+                array3[0] = array3[0] ^ array3[13];
                 array3[14] = array3[14] - array3[15];
                 num7 += array3[15] << 5;
-                array3[13] = (array3[13] ^ ~array3[1]);
+                array3[13] = array3[13] ^ ~array3[1];
                 num6 = array3[10] >> 31;
-                array3[14] = (array3[14] ^ array2[14]);
-                array3[8] = (array3[8] ^ array2[8]);
+                array3[14] = array3[14] ^ array2[14];
+                array3[8] = array3[8] ^ array2[8];
                 array3[12] = num5;
                 array3[1] = num8;
-                array3[5] = (array3[5] ^ array2[5]);
-                array3[11] = (array3[11] ^ array2[11]);
-                num5 = (array3[11] & 2204625944u);
-                array3[1] = (array3[1] ^ array2[1]);
-                array3[4] = (array3[4] ^ array2[4]);
-                array3[11] = (array3[11] & 2090341351u);
-                array3[11] = (array3[11] | (array3[4] & 2204625944u));
+                array3[5] = array3[5] ^ array2[5];
+                array3[11] = array3[11] ^ array2[11];
+                num5 = array3[11] & 2204625944u;
+                array3[1] = array3[1] ^ array2[1];
+                array3[4] = array3[4] ^ array2[4];
+                array3[11] = array3[11] & 2090341351u;
+                array3[11] = array3[11] | (array3[4] & 2204625944u);
                 array3[15] = num7;
-                num8 = (array3[14] & 2496954112u);
-                array3[14] = (array3[14] & 1798013183u);
-                array3[4] = (array3[4] & 2090341351u);
-                array3[15] = (array3[15] ^ array2[15]);
+                num8 = array3[14] & 2496954112u;
+                array3[14] = array3[14] & 1798013183u;
+                array3[4] = array3[4] & 2090341351u;
+                array3[15] = array3[15] ^ array2[15];
                 array3[10] = array3[10] << 1;
                 num5 *= 338764649u;
-                array3[14] = (array3[14] | (array3[9] & 2496954112u));
+                array3[14] = array3[14] | (array3[9] & 2496954112u);
                 array3[15] = array3[15] - array3[0];
-                array3[10] = (array3[10] | num6);
-                array3[10] = (array3[10] ^ array2[10]);
-                array3[3] = (array3[3] ^ array2[3]);
+                array3[10] = array3[10] | num6;
+                array3[10] = array3[10] ^ array2[10];
+                array3[3] = array3[3] ^ array2[3];
                 num8 *= 2292397853u;
-                array3[0] = (array3[0] ^ array2[0]);
-                array3[0] = (array3[0] ^ 2814140307u);
-                array3[2] = (array3[2] ^ ~array3[13]);
-                array3[4] = (array3[4] | num5 * 587046105u);
-                array3[9] = (array3[9] & 1798013183u);
-                array3[9] = (array3[9] | num8 * 1520255797u);
-                for (int k = 0; k < 16; k++)
+                array3[0] = array3[0] ^ array2[0];
+                array3[0] = array3[0] ^ 2814140307u;
+                array3[2] = array3[2] ^ ~array3[13];
+                array3[4] = array3[4] | (num5 * 587046105u);
+                array3[9] = array3[9] & 1798013183u;
+                array3[9] = array3[9] | (num8 * 1520255797u);
+                for (var k = 0; k < 16; k++)
                 {
-                    uint num9 = array3[k];
-                    array4[num4++] = (byte)num9;
-                    array4[num4++] = (byte)(num9 >> 8);
-                    array4[num4++] = (byte)(num9 >> 16);
-                    array4[num4++] = (byte)(num9 >> 24);
+                    var num9 = array3[k];
+                    array4[num4++] = (byte) num9;
+                    array4[num4++] = (byte) (num9 >> 8);
+                    array4[num4++] = (byte) (num9 >> 16);
+                    array4[num4++] = (byte) (num9 >> 24);
                     array2[k] ^= num9;
                 }
                 num3 += 16;
             }
-                decryptedBytes = Lzma.Decompress(array4);
+            _decryptedBytes = Lzma.Decompress(array4);
         }
 
         private void FindStringDecrypters(TypeDef type)
@@ -432,12 +436,10 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             {
                 if (!method.HasBody)
                     continue;
-                if (!(method.Signature.ContainsGenericParameter))
+                if (!method.Signature.ContainsGenericParameter)
                     continue;
                 var sig = method.MethodSig;
-                if (sig == null)
-                    continue;
-                if (sig.Params.Count != 1)
+                if (sig?.Params.Count != 1)
                     continue;
                 if (sig.Params[0].GetElementType() != ElementType.U4)
                     continue;
@@ -445,20 +447,10 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     continue;
                 if (sig.GenParamCount != 1)
                     continue;
-                deobfuscator.Deobfuscate(method, SimpleDeobfuscatorFlags.Force);
+                _deobfuscator.Deobfuscate(method, SimpleDeobfuscatorFlags.Force);
                 IsStringDecrypter(method);
             }
         }
-
-        string[] strDecryptCalledMethods = {
-            "System.Text.Encoding System.Text.Encoding::get_UTF8()",
-            "System.String System.Text.Encoding::GetString(System.Byte[],System.Int32,System.Int32)",
-            "System.Array System.Array::CreateInstance(System.Type,System.Int32)",
-            "System.String System.String::Intern(System.String)",
-            "System.Void System.Buffer::BlockCopy(System.Array,System.Int32,System.Array,System.Int32,System.Int32)",
-            "System.Type System.Type::GetTypeFromHandle(System.RuntimeTypeHandle)",
-            "System.Type System.Type::GetElementType()"
-        };
 
         private void IsStringDecrypter(MethodDef method)
         {
@@ -466,7 +458,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             if (instr.Count < 25)
                 return;
 
-            int i = 0;
+            var i = 0;
 
             if (!instr[i++].IsLdarg())
                 return;
@@ -481,7 +473,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             if (!DotNetUtils.IsMethod(nativeMethod, "System.Int32", "(System.Int32)"))
                 return;
 
-            if (!instr[i++].IsStarg())  //uint_0 = (uint_0 * 2857448701u ^ 1196001109u);
+            if (!instr[i++].IsStarg()) //uint_0 = (uint_0 * 2857448701u ^ 1196001109u);
                 return;
 
             if (!instr[i++].IsLdarg())
@@ -504,7 +496,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return;
             if (instr[i++].OpCode != OpCodes.And)
                 return;
-            if (!instr[i++].IsStarg())  //uint_0 &= 1073741823u;
+            if (!instr[i++].IsStarg()) //uint_0 &= 1073741823u;
                 return;
 
             if (!instr[i++].IsLdarg())
@@ -513,98 +505,108 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return;
             if (instr[i++].OpCode != OpCodes.Shl)
                 return;
-            if (!instr[i++].IsStarg())  //uint_0 <<= 2;
+            if (!instr[i++].IsStarg()) //uint_0 <<= 2;
                 return;
 
-            foreach (var mtd in strDecryptCalledMethods)
+            foreach (var mtd in _strDecryptCalledMethods)
                 if (!DotNetUtils.CallsMethod(method, mtd))
                     return;
             //TODO: Implement
             //if (!DotNetUtils.LoadsField(method, decryptedField))
             //    return;
-            constantDecrpers.Add(new ConstantDecrypterBase()
+            Decrypters.Add(new ConstantDecrypterBase
             {
-                Decrypted = decryptedBytes,
+                Decrypted = _decryptedBytes,
                 Method = method,
-                NativeMethod = nativeMethod,
+                NativeMethod = nativeMethod
             });
         }
 
-        static bool VerifyGenericArg(MethodSpec gim, ElementType etype)
+        private static bool VerifyGenericArg(MethodSpec gim, ElementType etype)
         {
-            if (gim == null)
-                return false;
-            var gims = gim.GenericInstMethodSig;
+            var gims = gim?.GenericInstMethodSig;
             if (gims == null || gims.GenericArguments.Count != 1)
                 return false;
             return gims.GenericArguments[0].GetElementType() == etype;
         }
+
         public string DecryptString(ConstantDecrypterBase info, MethodSpec gim, uint magic1)
         {
             if (!VerifyGenericArg(gim, ElementType.String))
                 return null;
             return info.DecryptString(magic1);
         }
+
         public object DecryptSByte(ConstantDecrypterBase info, MethodSpec gim, uint magic1)
         {
             if (!VerifyGenericArg(gim, ElementType.I1))
                 return null;
             return info.DecryptConstant<sbyte>(magic1);
         }
+
         public object DecryptByte(ConstantDecrypterBase info, MethodSpec gim, uint magic1)
         {
             if (!VerifyGenericArg(gim, ElementType.U1))
                 return null;
             return info.DecryptConstant<byte>(magic1);
         }
+
         public object DecryptInt16(ConstantDecrypterBase info, MethodSpec gim, uint magic1)
         {
             if (!VerifyGenericArg(gim, ElementType.I2))
                 return null;
             return info.DecryptConstant<short>(magic1);
         }
+
         public object DecryptUInt16(ConstantDecrypterBase info, MethodSpec gim, uint magic1)
         {
             if (!VerifyGenericArg(gim, ElementType.U2))
                 return null;
             return info.DecryptConstant<ushort>(magic1);
         }
+
         public object DecryptInt32(ConstantDecrypterBase info, MethodSpec gim, uint magic1)
         {
             if (!VerifyGenericArg(gim, ElementType.I4))
                 return null;
             return info.DecryptConstant<int>(magic1);
         }
+
         public object DecryptUInt32(ConstantDecrypterBase info, MethodSpec gim, uint magic1)
         {
             if (!VerifyGenericArg(gim, ElementType.U4))
                 return null;
             return info.DecryptConstant<uint>(magic1);
         }
+
         public object DecryptInt64(ConstantDecrypterBase info, MethodSpec gim, uint magic1)
         {
             if (!VerifyGenericArg(gim, ElementType.I8))
                 return null;
             return info.DecryptConstant<long>(magic1);
         }
+
         public object DecryptUInt64(ConstantDecrypterBase info, MethodSpec gim, uint magic1)
         {
             if (!VerifyGenericArg(gim, ElementType.U8))
                 return null;
             return info.DecryptConstant<ulong>(magic1);
         }
+
         public object DecryptSingle(ConstantDecrypterBase info, MethodSpec gim, uint magic1)
         {
             if (!VerifyGenericArg(gim, ElementType.R4))
                 return null;
             return info.DecryptConstant<float>(magic1);
         }
+
         public object DecryptDouble(ConstantDecrypterBase info, MethodSpec gim, uint magic1)
         {
             if (!VerifyGenericArg(gim, ElementType.R8))
                 return null;
             return info.DecryptConstant<double>(magic1);
         }
+
         public object DecryptArray(ConstantDecrypterBase info, MethodSpec gim, uint magic1)
         {
             if (!VerifyGenericArg(gim, ElementType.SZArray))

@@ -17,98 +17,78 @@
     along with de4dot.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+using System.Collections.Generic;
 using de4dot.blocks;
 using de4dot.blocks.cflow;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
-using System.Collections.Generic;
 
 namespace de4dot.code.deobfuscators.ConfuserEx
 {
-
     public class DeobfuscatorInfo : DeobfuscatorInfoBase
     {
-        public const string THE_NAME = "ConfuserEx";
+        internal const string THE_NAME = "ConfuserEx";
         public const string THE_TYPE = "cx";
-        const string DEFAULT_REGEX = DeobfuscatorBase.DEFAULT_ASIAN_VALID_NAME_REGEX;
+        private const string DEFAULT_REGEX = DeobfuscatorBase.DEFAULT_ASIAN_VALID_NAME_REGEX;
 
         public DeobfuscatorInfo()
             : base(DEFAULT_REGEX)
         {
         }
 
-        public override string Name
-        {
-            get { return THE_NAME; }
-        }
-
-        public override string Type
-        {
-            get { return THE_TYPE; }
-        }
+        public override string Name => THE_NAME;
+        public override string Type => THE_TYPE;
 
         public override IDeobfuscator CreateDeobfuscator()
         {
             return new Deobfuscator(new Deobfuscator.Options
             {
                 RenameResourcesInCode = false,
-                ValidNameRegex = validNameRegex.Get(),
+                ValidNameRegex = validNameRegex.Get()
             });
         }
 
-        class Deobfuscator : DeobfuscatorBase
+        private class Deobfuscator : DeobfuscatorBase
         {
-            private bool _detectedConfuserExAttribute = false, _deobfuscating = false;
-            private string _version = "";
-            private LzmaFinder _lzmaFinder;
+            private readonly ControlFlowFixer _controlFlowFixer = new ControlFlowFixer();
+
+            private bool _canRemoveLzma = true;
             private ConstantsDecrypter _constantDecrypter;
-            private ResourceDecrypter _resourceDecrypter;
+            private bool _detectedConfuserExAttribute, _deobfuscating;
+            private LzmaFinder _lzmaFinder;
             private ProxyCallFixer _proxyCallFixer;
-            private ControlFlowFixer _controlFlowFixer = new ControlFlowFixer();
-
-            #region ConstantInliners
-
-            SByteValueInliner sbyteValueInliner;
-            ByteValueInliner byteValueInliner;
-            Int16ValueInliner int16ValueInliner;
-            UInt16ValueInliner uint16ValueInliner;
-            Int32ValueInliner int32ValueInliner;
-            UInt32ValueInliner uint32ValueInliner;
-            Int64ValueInliner int64ValueInliner;
-            UInt64ValueInliner uint64ValueInliner;
-            SingleValueInliner singleValueInliner;
-            DoubleValueInliner doubleValueInliner;
-            ArrayValueInliner arrayValueInliner;
-
-            #endregion
-
-            internal class Options : OptionsBase
-            {
-            }
-
-            public override string Type
-            {
-                get { return DeobfuscatorInfo.THE_TYPE; }
-            }
-
-            public override string TypeLong
-            {
-                get { return DeobfuscatorInfo.THE_NAME; }
-            }
-
-            public override string Name
-            {
-                get { return $"{TypeLong} {_version}"; }
-            }
+            private ResourceDecrypter _resourceDecrypter;
+            private string _version = "";
 
             public Deobfuscator(Options options)
                 : base(options)
             {
             }
 
+            public override string Type => THE_TYPE;
+            public override string TypeLong => THE_NAME;
+            public override string Name => $"{TypeLong} {_version}";
+
+            public override IEnumerable<IBlocksDeobfuscator> BlocksDeobfuscators
+            {
+                get
+                {
+                    var list = new List<IBlocksDeobfuscator>();
+                    list.Add(_controlFlowFixer);
+
+                    if (_deobfuscating && _int32ValueInliner != null)
+                        list.Add(new ConstantsInliner(_sbyteValueInliner, _byteValueInliner, _int16ValueInliner,
+                                _uint16ValueInliner,
+                                _int32ValueInliner, _uint32ValueInliner, _int64ValueInliner, _uint64ValueInliner,
+                                _singleValueInliner, _doubleValueInliner, _arrayValueInliner)
+                            {ExecuteIfNotModified = true});
+                    return list;
+                }
+            }
+
             protected override int DetectInternal()
             {
-                int val = 0;
+                var val = 0;
                 if (_detectedConfuserExAttribute) val += 0;
                 if (_lzmaFinder.FoundLzma) val += 10;
                 if (_constantDecrypter.Detected) val += 10;
@@ -137,7 +117,6 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             private void DetectConfuserExAttribute()
             {
-                var versions = new List<string>();
                 foreach (var attribute in module.CustomAttributes)
                 {
                     if (attribute.TypeFullName != "ConfusedByAttribute")
@@ -160,81 +139,64 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             {
                 if (_constantDecrypter.Detected)
                 {
-                    Logger.w("Constants encryption detected! Please note that the decryption method has to be set manually!"); //TODO: Remove
+                    Logger.w(
+                        "Constants encryption detected! Please note that the decryption method has to be set manually!"); //TODO: Remove
 
-                    sbyteValueInliner = new SByteValueInliner();
-                    byteValueInliner = new ByteValueInliner();
-                    int16ValueInliner = new Int16ValueInliner();
-                    uint16ValueInliner = new UInt16ValueInliner();
-                    int32ValueInliner = new Int32ValueInliner();
-                    uint32ValueInliner = new UInt32ValueInliner();
-                    int64ValueInliner = new Int64ValueInliner();
-                    uint64ValueInliner = new UInt64ValueInliner();
-                    singleValueInliner = new SingleValueInliner();
-                    doubleValueInliner = new DoubleValueInliner();
-                    arrayValueInliner = new ArrayValueInliner(initializedDataCreator);
+                    _sbyteValueInliner = new SByteValueInliner();
+                    _byteValueInliner = new ByteValueInliner();
+                    _int16ValueInliner = new Int16ValueInliner();
+                    _uint16ValueInliner = new UInt16ValueInliner();
+                    _int32ValueInliner = new Int32ValueInliner();
+                    _uint32ValueInliner = new UInt32ValueInliner();
+                    _int64ValueInliner = new Int64ValueInliner();
+                    _uint64ValueInliner = new UInt64ValueInliner();
+                    _singleValueInliner = new SingleValueInliner();
+                    _doubleValueInliner = new DoubleValueInliner();
+                    _arrayValueInliner = new ArrayValueInliner(initializedDataCreator);
                     foreach (var info in _constantDecrypter.Decrypters)
                     {
                         staticStringInliner.Add(info.Method,
                             (method, gim, args) => _constantDecrypter.DecryptString(info, gim, (uint) args[0]));
-                        sbyteValueInliner.Add(info.Method,
+                        _sbyteValueInliner.Add(info.Method,
                             (method, gim, args) => _constantDecrypter.DecryptSByte(info, gim, (uint) args[0]));
-                        byteValueInliner.Add(info.Method,
+                        _byteValueInliner.Add(info.Method,
                             (method, gim, args) => _constantDecrypter.DecryptByte(info, gim, (uint) args[0]));
-                        int16ValueInliner.Add(info.Method,
+                        _int16ValueInliner.Add(info.Method,
                             (method, gim, args) => _constantDecrypter.DecryptInt16(info, gim, (uint) args[0]));
-                        uint16ValueInliner.Add(info.Method,
+                        _uint16ValueInliner.Add(info.Method,
                             (method, gim, args) => _constantDecrypter.DecryptUInt16(info, gim, (uint) args[0]));
-                        int32ValueInliner.Add(info.Method,
+                        _int32ValueInliner.Add(info.Method,
                             (method, gim, args) => _constantDecrypter.DecryptInt32(info, gim, (uint) args[0]));
-                        uint32ValueInliner.Add(info.Method,
+                        _uint32ValueInliner.Add(info.Method,
                             (method, gim, args) => _constantDecrypter.DecryptUInt32(info, gim, (uint) args[0]));
-                        int64ValueInliner.Add(info.Method,
+                        _int64ValueInliner.Add(info.Method,
                             (method, gim, args) => _constantDecrypter.DecryptInt64(info, gim, (uint) args[0]));
-                        uint64ValueInliner.Add(info.Method,
+                        _uint64ValueInliner.Add(info.Method,
                             (method, gim, args) => _constantDecrypter.DecryptUInt64(info, gim, (uint) args[0]));
-                        singleValueInliner.Add(info.Method,
+                        _singleValueInliner.Add(info.Method,
                             (method, gim, args) => _constantDecrypter.DecryptSingle(info, gim, (uint) args[0]));
-                        doubleValueInliner.Add(info.Method,
+                        _doubleValueInliner.Add(info.Method,
                             (method, gim, args) => _constantDecrypter.DecryptDouble(info, gim, (uint) args[0]));
-                        arrayValueInliner.Add(info.Method,
+                        _arrayValueInliner.Add(info.Method,
                             (method, gim, args) => _constantDecrypter.DecryptArray(info, gim, (uint) args[0]));
                     }
                     _deobfuscating = true;
                 }
                 if (_resourceDecrypter.Detected)
                 {
-                    Logger.w("Resource encryption detected! Please note that the decryption method has to be set manually!"); //TODO: Remove
+                    Logger.w(
+                        "Resource encryption detected! Please note that the decryption method has to be set manually!"); //TODO: Remove
                     _resourceDecrypter.Fix();
                 }
 
                 base.DeobfuscateBegin();
             }
 
-            public override IEnumerable<IBlocksDeobfuscator> BlocksDeobfuscators
-            {
-                get
-                {
-                    var list = new List<IBlocksDeobfuscator>();
-                    list.Add(_controlFlowFixer);
-
-                    if (_deobfuscating && int32ValueInliner != null)
-                        list.Add(new ConstantsInliner(sbyteValueInliner, byteValueInliner, int16ValueInliner,
-                                uint16ValueInliner,
-                                int32ValueInliner, uint32ValueInliner, int64ValueInliner, uint64ValueInliner,
-                                singleValueInliner, doubleValueInliner, arrayValueInliner)
-                            {ExecuteIfNotModified = true});
-                    return list;
-                }
-            }
-
-            bool _canRemoveLzma = true;
-
             public override void DeobfuscateEnd()
             {
                 FindAndRemoveInlinedMethods();
 
-                List<MethodDef> toRemoveFromCctor = new List<MethodDef>();
+                var toRemoveFromCctor = new List<MethodDef>();
 
                 if (_constantDecrypter.Detected)
                     if (CanRemoveStringDecrypterType)
@@ -247,7 +209,9 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                         AddTypeToBeRemoved(_constantDecrypter.Type, "Array field signature type");
                     }
                     else
+                    {
                         _canRemoveLzma = false;
+                    }
 
                 if (_resourceDecrypter.Detected && _resourceDecrypter.CanRemoveLzma)
                 {
@@ -275,13 +239,13 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     AddTypesToBeRemoved(_proxyCallFixer.AttributeTypes, "Proxy creator attributes");
                     AddMethodsToBeRemoved(_proxyCallFixer.NativeMethods, "Proxy native methods");
                 }
-                
+
                 AddMethodsToBeRemoved(_controlFlowFixer.NativeMethods, "Control flow native methods");
 
                 var moduleCctor = DotNetUtils.GetModuleTypeCctor(module);
                 foreach (var instr in moduleCctor.Body.Instructions)
                     if (instr.OpCode == OpCodes.Call && instr.Operand is MethodDef &&
-                        toRemoveFromCctor.Contains(instr.Operand as MethodDef))
+                        toRemoveFromCctor.Contains((MethodDef) instr.Operand))
                         instr.OpCode = OpCodes.Nop;
 
                 //No more mixed!
@@ -292,8 +256,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             public override IEnumerable<int> GetStringDecrypterMethods()
             {
-                var list = new List<int>();
-                return list;
+                return new List<int>();
             }
 
             public override void DeobfuscateMethodEnd(Blocks blocks)
@@ -301,6 +264,26 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 _proxyCallFixer.Deobfuscate(blocks);
                 base.DeobfuscateMethodEnd(blocks);
             }
+
+            internal class Options : OptionsBase
+            {
+            }
+
+            #region ConstantInliners
+
+            private SByteValueInliner _sbyteValueInliner;
+            private ByteValueInliner _byteValueInliner;
+            private Int16ValueInliner _int16ValueInliner;
+            private UInt16ValueInliner _uint16ValueInliner;
+            private Int32ValueInliner _int32ValueInliner;
+            private UInt32ValueInliner _uint32ValueInliner;
+            private Int64ValueInliner _int64ValueInliner;
+            private UInt64ValueInliner _uint64ValueInliner;
+            private SingleValueInliner _singleValueInliner;
+            private DoubleValueInliner _doubleValueInliner;
+            private ArrayValueInliner _arrayValueInliner;
+
+            #endregion
         }
     }
 }
