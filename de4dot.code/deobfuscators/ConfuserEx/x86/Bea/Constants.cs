@@ -1,7 +1,7 @@
 ﻿
 namespace de4dot.Bea
 {
-    public class BeaConstants
+    public static class BeaConstants
     {
         public static int INSTRUCT_LENGTH = 64;
         

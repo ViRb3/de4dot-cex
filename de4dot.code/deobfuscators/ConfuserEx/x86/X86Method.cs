@@ -39,7 +39,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx.x86
             var rawInstructions = new List<Disasm>();
 
             while (true)
-            {            
+            { 
                 byte[] bytes = ReadChunk(method, _module);
 
                 var disasm = new Disasm();
@@ -135,7 +135,6 @@ namespace de4dot.code.deobfuscators.ConfuserEx.x86
             return Registers["EAX"];
         }
 
-        
         public static Disasm Clone(Disasm disasm)
         {
             return new Disasm
@@ -152,6 +151,6 @@ namespace de4dot.code.deobfuscators.ConfuserEx.x86
                 SecurityBlock = disasm.SecurityBlock,
                 VirtualAddr = disasm.VirtualAddr
             };
-        }       
+        }
     }
 }

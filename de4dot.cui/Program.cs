@@ -124,7 +124,8 @@ namespace de4dot.cui {
 				Logger.Instance.LogErrorDontIgnore("{0}", ex.Message);
 				exitCode = 1;
 			}
-			/*catch (Exception ex)
+            //TODO: Re-enable exception handler
+            /*catch (Exception ex)
 			{
 			    throw;
 				if (PrintFullStackTrace()) {
@@ -138,7 +139,7 @@ namespace de4dot.cui {
 				exitCode = 1;
 			}*/
 
-			if (Logger.Instance.NumIgnoredMessages > 0) {
+            if (Logger.Instance.NumIgnoredMessages > 0) {
 				if (Logger.Instance.NumIgnoredMessages == 1)
 					Logger.n("Ignored {0} warning/error", Logger.Instance.NumIgnoredMessages);
 				else

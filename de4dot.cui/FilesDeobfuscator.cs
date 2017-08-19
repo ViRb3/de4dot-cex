@@ -214,11 +214,11 @@ namespace de4dot.cui {
 				allFiles[key] = true;
 
 				int oldIndentLevel = Logger.Instance.IndentLevel;
-				try {
+				//try {
 					file.DeobfuscatorContext = options.DeobfuscatorContext;
 					file.Load(options.CreateDeobfuscators());
-				}
-				catch (NotSupportedException) {
+                //}
+                /*catch (NotSupportedException) {
 					return false;	// Eg. unsupported architecture
 				}
 				catch (BadImageFormatException) {
@@ -235,14 +235,15 @@ namespace de4dot.cui {
 					return false;	// Not a .NET file
 				}
 				catch (Exception ex) {
+                    throw;
 					Logger.Instance.Log(false, null, LoggerEvent.Warning, "Could not load file ({0}): {1}", ex.GetType(), file.Filename);
 					return false;
 				}
 				finally {
 					Logger.Instance.IndentLevel = oldIndentLevel;
-				}
+				}*/
 
-				var deob = file.Deobfuscator;
+                var deob = file.Deobfuscator;
 				if (skipUnknownObfuscator && deob.Type == "un") {
 					Logger.v("Skipping unknown obfuscator: {0}", file.Filename);
 					RemoveModule(file.ModuleDefMD);

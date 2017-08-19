@@ -28,7 +28,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
     public class DeobfuscatorInfo : DeobfuscatorInfoBase
     {
         internal const string THE_NAME = "ConfuserEx";
-        public const string THE_TYPE = "cx";
+        public const string THE_TYPE = "crx";
         private const string DEFAULT_REGEX = DeobfuscatorBase.DEFAULT_ASIAN_VALID_NAME_REGEX;
 
         public DeobfuscatorInfo()
@@ -77,11 +77,16 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     list.Add(_controlFlowFixer);
 
                     if (_deobfuscating && _int32ValueInliner != null)
-                        list.Add(new ConstantsInliner(_sbyteValueInliner, _byteValueInliner, _int16ValueInliner,
-                                _uint16ValueInliner,
-                                _int32ValueInliner, _uint32ValueInliner, _int64ValueInliner, _uint64ValueInliner,
-                                _singleValueInliner, _doubleValueInliner, _arrayValueInliner)
-                            {ExecuteIfNotModified = true});
+                    {
+                        var constantInliner = new ConstantsInliner(_sbyteValueInliner, _byteValueInliner,
+                            _int16ValueInliner,
+                            _uint16ValueInliner, _int32ValueInliner, _uint32ValueInliner, _int64ValueInliner,
+                            _uint64ValueInliner, _singleValueInliner, _doubleValueInliner, _arrayValueInliner)
+                        {
+                            ExecuteIfNotModified = true
+                        };
+                        list.Add(constantInliner);
+                    }
                     return list;
                 }
             }
@@ -244,8 +249,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
                 var moduleCctor = DotNetUtils.GetModuleTypeCctor(module);
                 foreach (var instr in moduleCctor.Body.Instructions)
-                    if (instr.OpCode == OpCodes.Call && instr.Operand is MethodDef &&
-                        toRemoveFromCctor.Contains((MethodDef) instr.Operand))
+                    if (instr.OpCode == OpCodes.Call && instr.Operand is MethodDef
+                        && toRemoveFromCctor.Contains((MethodDef)instr.Operand))
                         instr.OpCode = OpCodes.Nop;
 
                 //No more mixed!
