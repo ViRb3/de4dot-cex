@@ -105,8 +105,15 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             {
                 _lzmaFinder = new LzmaFinder(module, DeobfuscatedFile);
                 _lzmaFinder.Find();
+
                 _constantDecrypter = new ConstantsDecrypter(module, _lzmaFinder.Method, DeobfuscatedFile);
+                Logger.w(
+    "Constants decryption enabled! Please note that the decryption method has to be set manually!"); //TODO: Remove
+
                 _resourceDecrypter = new ResourceDecrypter(module, _lzmaFinder.Method, DeobfuscatedFile);
+                Logger.w(
+    "Resource decryption detected! Please note that the decryption method has to be set manually!"); //TODO: Remove
+
                 if (_lzmaFinder.FoundLzma)
                 {
                     _constantDecrypter.Find();
@@ -144,9 +151,6 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             {
                 if (_constantDecrypter.Detected)
                 {
-                    Logger.w(
-                        "Constants encryption detected! Please note that the decryption method has to be set manually!"); //TODO: Remove
-
                     _sbyteValueInliner = new SByteValueInliner();
                     _byteValueInliner = new ByteValueInliner();
                     _int16ValueInliner = new Int16ValueInliner();
@@ -189,8 +193,6 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 }
                 if (_resourceDecrypter.Detected)
                 {
-                    Logger.w(
-                        "Resource encryption detected! Please note that the decryption method has to be set manually!"); //TODO: Remove
                     _resourceDecrypter.Fix();
                 }
 
