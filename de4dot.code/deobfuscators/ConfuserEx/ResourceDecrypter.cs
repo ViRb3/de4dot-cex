@@ -1,9 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using de4dot.blocks;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
+using dnlib.DotNet.Writer;
+using FieldAttributes = dnlib.DotNet.FieldAttributes;
+using MethodAttributes = dnlib.DotNet.MethodAttributes;
+using TypeAttributes = dnlib.DotNet.TypeAttributes;
 
 namespace de4dot.code.deobfuscators.ConfuserEx
 {
@@ -24,7 +31,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             _deobfuscator = deobfsucator;
         }
 
-        public bool CanRemoveLzma { get; private set; } = true;
+        public bool CanRemoveLzma { get; private set; }
 
         public TypeDef Type { get; private set; }
         public MethodDef Method { get; private set; }
@@ -49,17 +56,37 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     continue;
                 if (!DotNetUtils.IsMethod(method, "System.Void", "()"))
                     continue;
+                
                 _deobfuscator.Deobfuscate(method, SimpleDeobfuscatorFlags.Force);
-                if (!IsResDecryptInit(method))
+                
+                if (!IsResDecryptInit(method, out FieldDef aField, out FieldDef asmField, out MethodDef mtd))
                     continue;
-                Method = method;
+                
+                try
+                {
+                    _decryptedBytes = DecryptArray(method, aField.InitialValue);
+                }
+                catch(Exception e)
+                {
+	                Console.WriteLine(e.Message);
+                    return;
+                }
+                
+                _arrayField = aField;
+                Type = DotNetUtils.GetType(_module, aField.FieldSig.Type);
+                _asmField = asmField;
+                AssembyResolveMethod = mtd;   
+                Method = method;      
+	            CanRemoveLzma = true;
             }
         }
 
-        private bool IsResDecryptInit(MethodDef method)
+        private bool IsResDecryptInit(MethodDef method, out FieldDef aField, out FieldDef asField, out MethodDef mtd)
         {
+            aField = null;
+            asField = null;
+            mtd = null;
             var instr = method.Body.Instructions;
-
             if (instr.Count < 15)
                 return false;
 
@@ -80,10 +107,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return false;
             if (instr[5].OpCode != OpCodes.Ldtoken)
                 return false;
-            var aField = instr[5].Operand as FieldDef;
-            if (aField == null)
-                return false;
-            if (aField.InitialValue == null)
+            aField = instr[5].Operand as FieldDef;
+            if (aField?.InitialValue == null)
                 return false;
             if (aField.Attributes != (FieldAttributes.Assembly | FieldAttributes.Static | FieldAttributes.HasFieldRVA))
                 return false;
@@ -110,7 +135,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return false;
             if (instr[l - 7].OpCode != OpCodes.Stsfld) //<Module>.assembly_0 = Assembly.Load(array4);
                 return false;
-            var asField = instr[l - 7].Operand as FieldDef;
+            asField = instr[l - 7].Operand as FieldDef;
             if (asField == null)
                 return false;
 
@@ -122,97 +147,71 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return false;
             if (instr[l - 4].OpCode != OpCodes.Ldftn)
                 return false;
-            var mtd = instr[l - 4].Operand as MethodDef;
+            mtd = instr[l - 4].Operand as MethodDef;
             if (mtd == null)
                 return false;
+            
+            if (DotNetUtils.IsMethod(mtd, "", "()"))
+                return false;
+            
+            _deobfuscator.Deobfuscate(mtd, SimpleDeobfuscatorFlags.Force);     
+            
             if (!IsAssembyResolveMethod(mtd, asField))
                 return false;
+            
             if (instr[l - 3].OpCode != OpCodes.Newobj)
                 return false;
-            if (instr[l - 2].OpCode != OpCodes.Callvirt
-            ) //AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler(<Module>.smethod_1);
+            if (instr[l - 2].OpCode != OpCodes.Callvirt)
+                //AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler(<Module>.smethod_1);
                 return false;
-            try
-            {
-                DecryptArray(ConvertArray<uint, byte>(aField.InitialValue));
-            }
-            catch
-            {
-                CanRemoveLzma = false;
-                return false;
-            }
-            _arrayField = aField;
-            Type = DotNetUtils.GetType(_module, aField.FieldSig.Type);
-            _asmField = asField;
-            AssembyResolveMethod = mtd;
+
             return true;
         }
 
-        private T[] ConvertArray<T, T1>(T1[] array)
+        private byte[] DecryptArray(MethodDef method, byte[] encryptedArray)
         {
-            var l = Marshal.SizeOf(typeof(T));
-            var l1 = Marshal.SizeOf(typeof(T1));
-            var buffer = new T[array.Length * l1 / l];
-            Buffer.BlockCopy(array, 0, buffer, 0, array.Length * l1);
-            return buffer;
+            ModuleDefUser tempModule = new ModuleDefUser("TempModule");
+            
+            AssemblyDef tempAssembly = new AssemblyDefUser("TempAssembly");
+            tempAssembly.Modules.Add(tempModule);
+            
+            var tempType = new TypeDefUser("", "TempType", tempModule.CorLibTypes.Object.TypeDefOrRef);
+            tempType.Attributes = TypeAttributes.Public | TypeAttributes.Class;
+            MethodDef tempMethod = Utils.Clone(method);
+
+            tempMethod.ReturnType = new SZArraySig(tempModule.CorLibTypes.Byte);
+            tempMethod.MethodSig.Params.Add(new SZArraySig(tempModule.CorLibTypes.Byte));
+            tempMethod.Attributes = MethodAttributes.Public | MethodAttributes.Static;
+
+            for (int i = 0; i < 5; i++)
+                tempMethod.Body.Instructions.RemoveAt(2); // read encrypted array from argument
+            tempMethod.Body.Instructions.Insert(2, OpCodes.Ldarg_0.ToInstruction());
+
+            for (int i = 0; i < 8; i++)
+                tempMethod.Body.Instructions.RemoveAt(tempMethod.Body.Instructions.Count -
+                                                      2); // make return decrypted array
+
+            tempType.Methods.Add(tempMethod);
+            tempModule.Types.Add(tempType);
+            
+            using (MemoryStream memoryStream = new MemoryStream())
+            {
+                ModuleWriterOptions moduleWriterOptions = new ModuleWriterOptions();
+                moduleWriterOptions.MetaDataOptions = new MetaDataOptions();
+
+                tempModule.Write(memoryStream, moduleWriterOptions);
+
+                Assembly patchedAssembly = Assembly.Load(memoryStream.ToArray());
+                var type = patchedAssembly.ManifestModule.GetType("TempType");
+                var methods = type.GetMethods();
+                MethodInfo patchedMethod = methods.First(m => m.IsPublic && m.IsStatic);
+                byte[] decryptedBytes = (byte[]) patchedMethod.Invoke(null, new object[]{encryptedArray});
+                return Lzma.Decompress(decryptedBytes);
+            }
         }
 
-        private void DecryptArray(uint[] array) //TODO: Automatic detection
+	    private bool IsAssembyResolveMethod(MethodDef method, FieldDef field)
         {
-            var num = array.Length;
-            var array2 = new uint[16];
-            var num2 = 825993394u;
-            for (var i = 0; i < 16; i++)
-            {
-                num2 ^= num2 >> 13;
-                num2 ^= num2 << 25;
-                num2 ^= num2 >> 27;
-                array2[i] = num2;
-            }
-            var num3 = 0;
-            var num4 = 0;
-            var array3 = new uint[16];
-            var array4 = new byte[num * 4u];
-            while (num3 < (long) (ulong) num)
-            {
-                for (var j = 0; j < 16; j++)
-                    array3[j] = array[num3 + j];
-                array3[0] = array3[0] ^ array2[0];
-                array3[1] = array3[1] ^ array2[1];
-                array3[2] = array3[2] ^ array2[2];
-                array3[3] = array3[3] ^ array2[3];
-                array3[4] = array3[4] ^ array2[4];
-                array3[5] = array3[5] ^ array2[5];
-                array3[6] = array3[6] ^ array2[6];
-                array3[7] = array3[7] ^ array2[7];
-                array3[8] = array3[8] ^ array2[8];
-                array3[9] = array3[9] ^ array2[9];
-                array3[10] = array3[10] ^ array2[10];
-                array3[11] = array3[11] ^ array2[11];
-                array3[12] = array3[12] ^ array2[12];
-                array3[13] = array3[13] ^ array2[13];
-                array3[14] = array3[14] ^ array2[14];
-                array3[15] = array3[15] ^ array2[15];
-                for (var k = 0; k < 16; k++)
-                {
-                    var num5 = array3[k];
-                    array4[num4++] = (byte) num5;
-                    array4[num4++] = (byte) (num5 >> 8);
-                    array4[num4++] = (byte) (num5 >> 16);
-                    array4[num4++] = (byte) (num5 >> 24);
-                    array2[k] ^= num5;
-                }
-                num3 += 16;
-            }
-            _decryptedBytes = Lzma.Decompress(array4);
-        }
-
-        private bool IsAssembyResolveMethod(MethodDef method, FieldDef field)
-        {
-            if (DotNetUtils.IsMethod(method, "", "()"))
-                return false;
-            _deobfuscator.Deobfuscate(method, SimpleDeobfuscatorFlags.Force);
-
             var instr = method.Body.Instructions;
             if (instr.Count != 10)
                 return false;
@@ -247,6 +246,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return false;
             if (instr[9].OpCode != OpCodes.Ret)
                 return false;
+            
             return true;
         }
 

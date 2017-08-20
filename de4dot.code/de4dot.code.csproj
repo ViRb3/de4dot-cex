@@ -441,7 +441,7 @@
     <PostBuildEvent>mkdir "..\$(OutDir)..\LICENSES"
 copy "$(SolutionDir)LICENSE*.txt" "..\$(OutDir)..\LICENSES"
 copy "$(SolutionDir)COPYING" "..\$(OutDir)..\LICENSES"
-copy "$(SolutionDir)BeaEngine.dll" "..\$(OutDir)..\BeaEngine.dll"</PostBuildEvent>
+copy "$(SolutionDir)BeaEngine.dll" "$(TargetDir)BeaEngine.dll"</PostBuildEvent>
   </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

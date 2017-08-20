@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using de4dot.blocks;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
@@ -142,6 +144,26 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 if (!block.LastInstr.IsLdcI4() || block.LastInstr.GetLdcI4Value() != block.FirstInstr.GetLdcI4Value())
                     return false;
             return true;
+        }
+        
+        public static MethodDefUser Clone(MethodDef origin)
+        {
+            var ret = new MethodDefUser(origin.Name, origin.MethodSig, origin.ImplAttributes, origin.Attributes);
+
+            foreach (GenericParam genericParam in origin.GenericParameters)
+                ret.GenericParameters.Add(new GenericParamUser(genericParam.Number, genericParam.Flags, "-"));
+
+            ret.Body = origin.Body;
+            return ret;
+        }
+        
+        public static T[] ConvertArray<T, T1>(T1[] array)
+        {
+            var l = Marshal.SizeOf(typeof(T));
+            var l1 = Marshal.SizeOf(typeof(T1));
+            var buffer = new T[array.Length * l1 / l];
+            Buffer.BlockCopy(array, 0, buffer, 0, array.Length * l1);
+            return buffer;
         }
     }
 

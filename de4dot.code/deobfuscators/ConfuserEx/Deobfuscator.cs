@@ -107,12 +107,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 _lzmaFinder.Find();
 
                 _constantDecrypter = new ConstantsDecrypter(module, _lzmaFinder.Method, DeobfuscatedFile);
-                Logger.w(
-    "Constants decryption enabled! Please note that the decryption method has to be set manually!"); //TODO: Remove
-
                 _resourceDecrypter = new ResourceDecrypter(module, _lzmaFinder.Method, DeobfuscatedFile);
-                Logger.w(
-    "Resource decryption detected! Please note that the decryption method has to be set manually!"); //TODO: Remove
 
                 if (_lzmaFinder.FoundLzma)
                 {
@@ -141,7 +136,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                         if (!value.Contains("ConfuserEx"))
                             continue;
                         _detectedConfuserExAttribute = true;
-                        _version = value.Replace("ConfuserEx", "");
+                        _version = value.Replace("ConfuserEx", "").Trim();
                         return;
                     }
                 }
@@ -231,7 +226,9 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 }
 
                 if (!_constantDecrypter.CanRemoveLzma || !_resourceDecrypter.CanRemoveLzma)
+                {
                     _canRemoveLzma = false;
+                }
 
                 if (_lzmaFinder.FoundLzma && _canRemoveLzma)
                 {
@@ -252,9 +249,10 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 var moduleCctor = DotNetUtils.GetModuleTypeCctor(module);
                 foreach (var instr in moduleCctor.Body.Instructions)
                     if (instr.OpCode == OpCodes.Call && instr.Operand is MethodDef
-                        && toRemoveFromCctor.Contains((MethodDef)instr.Operand))
+                        && toRemoveFromCctor.Contains((MethodDef) instr.Operand))
                         instr.OpCode = OpCodes.Nop;
 
+                //TODO: Might not always be correct
                 //No more mixed!
                 module.IsILOnly = true;
 
