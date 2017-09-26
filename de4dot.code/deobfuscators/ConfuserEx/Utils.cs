@@ -169,61 +169,6 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
     public static class Extensions
     {
-        public static bool IsConfuserExSwitch(this SwitchData switchData)
-        {
-            var instructions = switchData.Block.Instructions;
-            var lastIndex = instructions.Count - 1;
-
-            if (instructions.Count < 4)
-                return false;
-            if (!instructions[lastIndex - 3].IsStloc())
-                return false;
-            if (!instructions[lastIndex - 2].IsLdcI4())
-                return false;
-            if (instructions[lastIndex - 1].OpCode != OpCodes.Rem_Un)
-                return false;
-
-            return true;
-        }
-
-        public static bool IsNative(this SwitchData switchData)
-        {
-            var block = switchData.Block;
-
-            var instr = block.Instructions;
-            if (instr.Count <= 4)
-                return false;
-
-            if (instr[0].IsLdcI4() && instr[1].OpCode == OpCodes.Call)
-            {
-                switchData.IsKeyHardCoded = true;
-                block.SwitchData.Key = block.FirstInstr.GetLdcI4Value();
-            }
-
-            if (!switchData.IsKeyHardCoded && instr[0].OpCode != OpCodes.Call)
-                return false;
-
-            var method = block.Instructions[switchData.IsKeyHardCoded ? 1 : 0].Operand as MethodDef;
-
-            if (method == null || !method.IsStatic || !method.IsNative)
-                return false;
-            if (!DotNetUtils.IsMethod(method, "System.Int32", "(System.Int32)"))
-                return false;
-            for (var i = switchData.IsKeyHardCoded ? 2 : 1; i < instr.Count - 1; i++)
-                if (!instr[i].IsValidInstr())
-                    return false;
-
-            return true;
-        }
-
-        public static MethodDef GetNativeMethod(this SwitchData switchData)
-        {
-            var block = switchData.Block;
-
-            var method = block.Instructions[switchData.IsKeyHardCoded ? 1 : 0].Operand as MethodDef;
-            return method;
-        }
-
         public static bool IsTernaryPredicate(this Block ternaryPredicateBlock)
         {
             if (!ternaryPredicateBlock.LastInstr.IsConditionalBranch())

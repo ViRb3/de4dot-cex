@@ -163,6 +163,8 @@
     <Compile Include="deobfuscators\ConfuserEx\LzmaFinder.cs" />
     <Compile Include="deobfuscators\ConfuserEx\ProxyCallFixer.cs" />
     <Compile Include="deobfuscators\ConfuserEx\ResourceDecrypter.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\NativeSwitchData.cs" />
+    <Compile Include="deobfuscators\ConfuserEx\NormalSwitchData.cs" />
     <Compile Include="deobfuscators\ConfuserEx\Utils.cs" />
     <Compile Include="deobfuscators\ConfuserEx\x86\Bea\Constants.cs" />
     <Compile Include="deobfuscators\ConfuserEx\x86\Bea\Engine.cs" />

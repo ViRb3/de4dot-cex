@@ -29,27 +29,16 @@ namespace de4dot.blocks {
         SwitchCase
     }
 
-    public class SwitchData
-    {
-        public readonly Block Block;
-        public SwitchData(Block switchBlock)
-        {
-            Block = switchBlock;
-        }
-        public int? Key = null;
-        public bool IsKeyHardCoded = false;
-    }
-
     public class Block : BaseBlock
 	{
-	    public Block()
-	    {
+        public BlockType BlockType = BlockType.Normal;
+        public bool Processed = false;
+        public SwitchData SwitchData;
+
+        public Block()
+        {
             SwitchData = new SwitchData(this);
         }
-
-        public BlockType BlockType = BlockType.Normal;
-	    public SwitchData SwitchData;
-        public bool Processed = false;
 
         List<Instr> instructions = new List<Instr>();
 

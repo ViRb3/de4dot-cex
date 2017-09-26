@@ -94,7 +94,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             protected override int DetectInternal()
             {
                 var val = 0;
-                if (_detectedConfuserExAttribute) val += 0;
+                if (_detectedConfuserExAttribute) val += 2;
                 if (_lzmaFinder.FoundLzma) val += 10;
                 if (_constantDecrypter.Detected) val += 10;
                 if (_resourceDecrypter.Detected) val += 10;

@@ -16,30 +16,49 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
         private readonly InstructionEmulator _instructionEmulator = new InstructionEmulator();
 
-        private Blocks _blocks;  
-        private X86Method _nativeMethod;
+        private Blocks _blocks;
         private Local _switchKey;
 
-        private int? CalculateKey()
+        private int? CalculateKey(SwitchData switchData)
         {
             var popValue = _instructionEmulator.Peek();
-
             if (popValue == null || !popValue.IsInt32() || !(popValue as Int32Value).AllBitsValid())
                 return null;
 
             _instructionEmulator.Pop();
-            int result = _nativeMethod.Execute(((Int32Value)popValue).Value);
-            return result;
+            int num = ((Int32Value)popValue).Value;
+
+            if (switchData is NativeSwitchData)
+            {
+                var nativeSwitchData = (NativeSwitchData)switchData;
+                var nativeMethod = new X86Method(nativeSwitchData.NativeMethodDef, _blocks.Method.Module as ModuleDefMD); //TODO: Possible null
+                return nativeMethod.Execute(num);
+            }
+            if (switchData is NormalSwitchData)
+            {
+                var normalSwitchData = (NormalSwitchData)switchData;
+                return num ^ normalSwitchData.Key.Value;
+            }
+            return null;
         }
 
-        private int CalculateSwitchCaseIndex(Block block, int nativeKey)
+        private int? CalculateSwitchCaseIndex(Block block, SwitchData switchData, int key)
         {
-            _instructionEmulator.Push(new Int32Value(nativeKey));
-            _instructionEmulator.Emulate(block.Instructions, block.SwitchData.IsKeyHardCoded ? 2 : 1, block.Instructions.Count - 1);
+            if (switchData is NativeSwitchData)
+            {
+                _instructionEmulator.Push(new Int32Value(key));
+                _instructionEmulator.Emulate(block.Instructions, block.SwitchData.IsKeyHardCoded ? 2 : 1, block.Instructions.Count - 1);
 
-            var popValue = _instructionEmulator.Peek();
-            _instructionEmulator.Pop();
-            return ((Int32Value)popValue).Value;
+                var popValue = _instructionEmulator.Peek();
+                _instructionEmulator.Pop();
+                return ((Int32Value)popValue).Value;
+            }
+            if (switchData is NormalSwitchData)
+            {
+                var normalSwitchData = (NormalSwitchData)switchData;
+                return key % normalSwitchData.DivisionKey;
+            }
+            return null;
         }
 
         private void ProcessHardcodedSwitch(Block switchBlock) // a single-case switch
@@ -47,15 +66,17 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             var targets = switchBlock.Targets;
             _instructionEmulator.Push(new Int32Value(switchBlock.SwitchData.Key.Value));
 
-            int? key = CalculateKey();
+            int? key = CalculateKey(switchBlock.SwitchData);
             if (!key.HasValue)
                 throw new Exception("CRITICAL ERROR: KEY HAS NO VALUE");
 
-            int switchCaseIndex = CalculateSwitchCaseIndex(switchBlock, key.Value);
+            int? switchCaseIndex = CalculateSwitchCaseIndex(switchBlock, switchBlock.SwitchData, key.Value);
+            if (!switchCaseIndex.HasValue)
+                throw new Exception("CRITICAL ERROR: SWITCH CASE HAS NO VALUE");
             if (targets.Count < switchCaseIndex)
                 throw new Exception("CRITICAL ERROR: KEY OUT OF RANGE");
 
-            var targetBlock = targets[switchCaseIndex];
+            var targetBlock = targets[switchCaseIndex.Value];
             targetBlock.SwitchData.Key = key;
 
             switchBlock.Instructions.Clear();
@@ -70,15 +91,17 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             if (_instructionEmulator.Peek().IsUnknown())
                 throw new Exception("CRITICAL ERROR: STACK VALUE UNKNOWN");
 
-            int? key = CalculateKey();
+            int? key = CalculateKey(switchBlock.SwitchData);
             if (!key.HasValue)
                 throw new Exception("CRITICAL ERROR: KEY HAS NO VALUE");
 
-            int switchCaseIndex = CalculateSwitchCaseIndex(switchBlock, key.Value);
+            int? switchCaseIndex = CalculateSwitchCaseIndex(switchBlock, switchBlock.SwitchData, key.Value);
+            if (!switchCaseIndex.HasValue)
+                throw new Exception("CRITICAL ERROR: SWITCH CASE HAS NO VALUE");
             if (targets.Count < switchCaseIndex)
                 throw new Exception("CRITICAL ERROR: KEY OUT OF RANGE");
 
-            var targetBlock = targets[switchCaseIndex];
+            var targetBlock = targets[switchCaseIndex.Value];
             targetBlock.SwitchData.Key = key;
 
             block.Add(new Instr(OpCodes.Pop.ToInstruction())); // neutralize the arithmetics and leave de4dot to remove them
@@ -105,21 +128,23 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 if (_instructionEmulator.Peek().IsUnknown())
                     throw new Exception("CRITICAL ERROR: STACK VALUE UNKNOWN");
 
-                int? key = CalculateKey();
+                int? key = CalculateKey(switchBlock.SwitchData);
                 if (!key.HasValue)
                     throw new Exception("CRITICAL ERROR: KEY HAS NO VALUE");
 
-                int switchCaseIndex = CalculateSwitchCaseIndex(switchBlock, key.Value);
+                int? switchCaseIndex = CalculateSwitchCaseIndex(switchBlock, switchBlock.SwitchData, key.Value);
+                if (!switchCaseIndex.HasValue)
+                    throw new Exception("CRITICAL ERROR: SWITCH CASE HAS NO VALUE");
                 if (targets.Count < switchCaseIndex)
                     throw new Exception("CRITICAL ERROR: KEY OUT OF RANGE");
 
-                var targetBlock = targets[switchCaseIndex];
+                var targetBlock = targets[switchCaseIndex.Value];
                 targetBlock.SwitchData.Key = key;
 
                 sourceBlock.Instructions[sourceBlock.Instructions.Count - 1] = new Instr(OpCodes.Pop.ToInstruction());
-                sourceBlock.ReplaceLastNonBranchWithBranch(0, targets[switchCaseIndex]);
+                sourceBlock.ReplaceLastNonBranchWithBranch(0, targets[switchCaseIndex.Value]);
 
-                ProcessFallThroughs(switchCaseBlocks, switchBlock, targets[switchCaseIndex], key.Value);
+                ProcessFallThroughs(switchCaseBlocks, switchBlock, targets[switchCaseIndex.Value], key.Value);
                 // the second source block now becomes the first one
             }
 
@@ -142,12 +167,6 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             foreach (Block switchBlock in switchBlocks)
             {
-                if (!switchBlock.SwitchData.IsConfuserExSwitch())
-                {
-                    Console.WriteLine("Unsupported switch block obfuscation!");
-                    continue;
-                }
-
                 if (switchBlock.SwitchData.IsKeyHardCoded)
                 {
                     ProcessHardcodedSwitch(switchBlock);
@@ -221,19 +240,40 @@ namespace de4dot.code.deobfuscators.ConfuserEx
         }
 
 
-        public bool IsSwitchBlock(Block block)
+        public bool IsConfuserExSwitchBlock(Block block)
         {
             if (block.LastInstr.OpCode.Code != Code.Switch || ((Instruction[])block.LastInstr.Operand)?.Length == 0)
                 return false;
-            if (!block.SwitchData.IsNative())
+
+            var instructions = block.Instructions;
+            var lastIndex = instructions.Count - 1;
+
+            if (instructions.Count < 4)
+                return false;
+            if (!instructions[lastIndex - 3].IsStloc())
+                return false;
+            if (!instructions[lastIndex - 2].IsLdcI4())
+                return false;
+            if (instructions[lastIndex - 1].OpCode != OpCodes.Rem_Un)
                 return false;
 
-            MethodDef nativeMethod = block.SwitchData.GetNativeMethod();
-            _nativeMethod = new X86Method(nativeMethod, _blocks.Method.Module as ModuleDefMD); //TODO: Possible null
-            if (!NativeMethods.Contains(nativeMethod))
-                NativeMethods.Add(nativeMethod);
+            var nativeSwitchData = new NativeSwitchData(block);
+            if (nativeSwitchData.Initialize())
+            {
+                block.SwitchData = nativeSwitchData;
+                if (!NativeMethods.Contains(nativeSwitchData.NativeMethodDef)) // add for remove
+                    NativeMethods.Add(nativeSwitchData.NativeMethodDef);
+                return true;
+            }
 
-            return true;
+            var normalSwitchData = new NormalSwitchData(block);
+            if (normalSwitchData.Initialize())
+            {
+                block.SwitchData = normalSwitchData;
+                return true;
+            }
+
+            return false;
         }
 
         public List<Block> GetSwitchBlocks(List<Block> blocks) // get the blocks which contain the switch statement
@@ -241,7 +281,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             List<Block> switchBlocks = new List<Block>();
 
             foreach (Block block in blocks)
-                if (IsSwitchBlock(block))
+                if (IsConfuserExSwitchBlock(block))
                     switchBlocks.Add(block);
 
             return switchBlocks;
