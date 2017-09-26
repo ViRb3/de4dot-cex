@@ -23,11 +23,17 @@ namespace de4dot.code.deobfuscators.ConfuserEx
         private X86Method _nativeMethod;
 
         public MethodDef Method { get; set; }
-        public MethodDef NativeMethod { get; set; }
         public byte[] Decrypted { get; set; }
         public uint Magic1 { get; set; }
         public uint Magic2 { get; set; }
         public bool CanRemove { get; set; } = true;
+
+        // native mode
+        public MethodDef NativeMethod { get; internal set; }
+
+        // normal mode
+        public uint Num1 { get; internal set; }
+        public uint Num2 { get; internal set; }
 
         private int? CalculateKey()
         {
@@ -43,11 +49,20 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
         private uint CalculateMagic(uint index)
         {
-            _instructionEmulator.Push(new Int32Value((int) index));
-            _nativeMethod = new X86Method(NativeMethod, Method.Module as ModuleDefMD); //TODO: Possible null
-            var key = CalculateKey();
+            uint uint_0;
+            if (NativeMethod != null)
+            {
+                _instructionEmulator.Push(new Int32Value((int)index));
+                _nativeMethod = new X86Method(NativeMethod, Method.Module as ModuleDefMD); //TODO: Possible null
+                var key = CalculateKey();
 
-            var uint_0 = (uint) key.Value;
+                uint_0 = (uint)key.Value;
+            }
+            else
+            {
+                uint_0 = index * Num1 ^ Num2;
+            }
+
             uint_0 &= 0x3fffffff;
             uint_0 <<= 2;
             return uint_0;
@@ -278,7 +293,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
                 _deobfuscator.Deobfuscate(method, SimpleDeobfuscatorFlags.Force);
 
-                if (IsStringDecrypter(method, out MethodDef nativeMethod))
+                if (IsNativeStringDecrypter(method, out MethodDef nativeMethod))
                 {
                     yield return new ConstantDecrypterBase
                     {
@@ -287,10 +302,87 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                         NativeMethod = nativeMethod
                     };
                 }
+                if (IsNormalStringDecrypter(method, out int num1, out int num2))
+                {
+                    yield return new ConstantDecrypterBase
+                    {
+                        Decrypted = _decryptedBytes,
+                        Method = method,
+                        Num1 = (uint)num1,
+                        Num2 = (uint)num2
+                    };
+                }
             }
         }
 
-        private bool IsStringDecrypter(MethodDef method, out MethodDef nativeMethod)
+        private bool IsNormalStringDecrypter(MethodDef method, out int num1, out int num2)
+        {
+            num1 = 0;
+            num2 = 0;
+            var instr = method.Body.Instructions;
+            if (instr.Count < 25)
+                return false;
+
+            var i = 0;
+
+            if (!instr[i++].IsLdarg())
+                return false;
+            if (!instr[i].IsLdcI4())
+                return false;
+            num1 = (int)instr[i++].Operand;
+            if (instr[i++].OpCode != OpCodes.Mul)
+                return false;
+            if (!instr[i].IsLdcI4())
+                return false;
+            num2 = (int)instr[i++].Operand;
+            if (instr[i++].OpCode != OpCodes.Xor)
+                return false;
+
+            if (!instr[i++].IsStarg()) //uint_0 = (uint_0 * 2857448701u ^ 1196001109u);
+                return false;
+
+            if (!instr[i++].IsLdarg())
+                return false;
+            if (!instr[i].IsLdcI4() || instr[i++].GetLdcI4Value() != 0x1E)
+                return false;
+            if (instr[i++].OpCode != OpCodes.Shr_Un)
+                return false;
+            if (!instr[i++].IsStloc()) //uint num = uint_0 >> 30;
+                return false;
+            i++;
+            //TODO: Implement
+            //if (!instr[10].IsLdloca())
+            //    return;
+            if (instr[i++].OpCode != OpCodes.Initobj)
+                return false;
+            if (!instr[i++].IsLdarg())
+                return false;
+            if (!instr[i].IsLdcI4() || instr[i++].GetLdcI4Value() != 0x3FFFFFFF)
+                return false;
+            if (instr[i++].OpCode != OpCodes.And)
+                return false;
+            if (!instr[i++].IsStarg()) //uint_0 &= 1073741823u;
+                return false;
+
+            if (!instr[i++].IsLdarg())
+                return false;
+            if (!instr[i].IsLdcI4() || instr[i++].GetLdcI4Value() != 2)
+                return false;
+            if (instr[i++].OpCode != OpCodes.Shl)
+                return false;
+            if (!instr[i++].IsStarg()) //uint_0 <<= 2;
+                return false;
+
+            foreach (var mtd in _strDecryptCalledMethods)
+                if (!DotNetUtils.CallsMethod(method, mtd))
+                    return false;
+            //TODO: Implement
+            //if (!DotNetUtils.LoadsField(method, decryptedField))
+            //    return;
+            return true;
+        }
+
+        private bool IsNativeStringDecrypter(MethodDef method, out MethodDef nativeMethod)
         {
             nativeMethod = null;
             var instr = method.Body.Instructions;
