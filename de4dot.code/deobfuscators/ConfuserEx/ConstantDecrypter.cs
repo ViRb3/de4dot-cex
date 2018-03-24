@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using de4dot.blocks;
 using de4dot.blocks.cflow;
-using de4dot.code.deobfuscators.ConfuserEx.x86;
+//using de4dot.code.deobfuscators.ConfuserEx.x86;
 using dnlib.DotNet;
 using dnlib.DotNet.Writer;
 using FieldAttributes = dnlib.DotNet.FieldAttributes;
@@ -20,13 +20,19 @@ namespace de4dot.code.deobfuscators.ConfuserEx
     public class ConstantDecrypterBase
     {
         private readonly InstructionEmulator _instructionEmulator = new InstructionEmulator();
-        private X86Method _nativeMethod;
+        private x86Emulator _nativeEmulator;
+        //private X86Method _nativeMethod;
 
         public MethodDef Method { get; set; }
         public byte[] Decrypted { get; set; }
         public uint Magic1 { get; set; }
         public uint Magic2 { get; set; }
         public bool CanRemove { get; set; } = true;
+
+        public ConstantDecrypterBase(x86Emulator nativeEmulator)
+        {
+            _nativeEmulator = nativeEmulator;
+        }
 
         // native mode
         public MethodDef NativeMethod { get; internal set; }
@@ -43,7 +49,8 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 return null;
 
             _instructionEmulator.Pop();
-            var result = _nativeMethod.Execute(((Int32Value) popValue).Value);
+           // var result = _nativeMethod.Execute(((Int32Value) popValue).Value);
+            var result = (int?)_nativeEmulator.Emulate(NativeMethod, ((Int32Value)popValue).Value);
             return result;
         }
 
@@ -53,7 +60,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             if (NativeMethod != null)
             {
                 _instructionEmulator.Push(new Int32Value((int)index));
-                _nativeMethod = new X86Method(NativeMethod, Method.Module as ModuleDefMD); //TODO: Possible null
+                //_nativeMethod = new X86Method(NativeMethod, Method.Module as ModuleDefMD); //TODO: Possible null
                 var key = CalculateKey();
 
                 uint_0 = (uint)key.Value;
@@ -115,12 +122,14 @@ namespace de4dot.code.deobfuscators.ConfuserEx
         private byte[] _decryptedBytes;
         private FieldDef _decryptedField, _arrayField;
         internal TypeDef ArrayType;
+        private x86Emulator _nativeEmulator;
 
-        public ConstantsDecrypter(ModuleDef module, MethodDef lzmaMethod, ISimpleDeobfuscator deobfsucator)
+        public ConstantsDecrypter(ModuleDef module, MethodDef lzmaMethod, ISimpleDeobfuscator deobfsucator, x86Emulator nativeEmulator)
         {
             _module = module;
             _lzmaMethod = lzmaMethod;
             _deobfuscator = deobfsucator;
+            _nativeEmulator = nativeEmulator;
         }
 
         public bool CanRemoveLzma { get; private set; }
@@ -295,7 +304,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
                 if (IsNativeStringDecrypter(method, out MethodDef nativeMethod))
                 {
-                    yield return new ConstantDecrypterBase
+                    yield return new ConstantDecrypterBase(_nativeEmulator)
                     {
                         Decrypted = _decryptedBytes,
                         Method = method,
@@ -304,7 +313,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 }
                 if (IsNormalStringDecrypter(method, out int num1, out int num2))
                 {
-                    yield return new ConstantDecrypterBase
+                    yield return new ConstantDecrypterBase(_nativeEmulator)
                     {
                         Decrypted = _decryptedBytes,
                         Method = method,

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using de4dot.blocks;
 using de4dot.blocks.cflow;
-using de4dot.code.deobfuscators.ConfuserEx.x86;
+//using de4dot.code.deobfuscators.ConfuserEx.x86;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
 
@@ -15,9 +15,15 @@ namespace de4dot.code.deobfuscators.ConfuserEx
         public List<MethodDef> NativeMethods = new List<MethodDef>();
 
         private readonly InstructionEmulator _instructionEmulator = new InstructionEmulator();
+        private x86Emulator _nativeEmulator;
 
         private Blocks _blocks;
         private Local _switchKey;
+
+        public ControlFlowFixer(x86Emulator nativeEmulator)
+        {
+            _nativeEmulator = nativeEmulator;
+        }
 
         private int? CalculateKey(SwitchData switchData)
         {
@@ -31,8 +37,9 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             if (switchData is NativeSwitchData)
             {
                 var nativeSwitchData = (NativeSwitchData)switchData;
-                var nativeMethod = new X86Method(nativeSwitchData.NativeMethodDef, _blocks.Method.Module as ModuleDefMD); //TODO: Possible null
-                return nativeMethod.Execute(num);
+                //var nativeMethod = new X86Method(nativeSwitchData.NativeMethodDef, _blocks.Method.Module as ModuleDefMD); //TODO: Possible null
+                //return nativeMethod.Execute(num);
+                return (int?)_nativeEmulator.Emulate(nativeSwitchData.NativeMethodDef, num);
             }
             if (switchData is NormalSwitchData)
             {

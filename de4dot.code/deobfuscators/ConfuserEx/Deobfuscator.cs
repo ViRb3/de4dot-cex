@@ -50,7 +50,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
         private class Deobfuscator : DeobfuscatorBase
         {
-            private readonly ControlFlowFixer _controlFlowFixer = new ControlFlowFixer();
+            private ControlFlowFixer _controlFlowFixer;
 
             private bool _canRemoveLzma = true;
             private ConstantsDecrypter _constantDecrypter;
@@ -58,6 +58,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
             private LzmaFinder _lzmaFinder;
             private ProxyCallFixer _proxyCallFixer;
             private ResourceDecrypter _resourceDecrypter;
+            private x86Emulator _nativeEmulator;
             private string _version = "";
 
             public Deobfuscator(Options options)
@@ -103,10 +104,13 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
             protected override void ScanForObfuscator()
             {
+                _nativeEmulator = new x86Emulator(DeobUtils.ReadModule(module));
+
+                _controlFlowFixer = new ControlFlowFixer(_nativeEmulator);
                 _lzmaFinder = new LzmaFinder(module, DeobfuscatedFile);
                 _lzmaFinder.Find();
 
-                _constantDecrypter = new ConstantsDecrypter(module, _lzmaFinder.Method, DeobfuscatedFile);
+                _constantDecrypter = new ConstantsDecrypter(module, _lzmaFinder.Method, DeobfuscatedFile, _nativeEmulator);
                 _resourceDecrypter = new ResourceDecrypter(module, _lzmaFinder.Method, DeobfuscatedFile);
 
                 if (_lzmaFinder.FoundLzma)
@@ -115,7 +119,7 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                     _resourceDecrypter.Find();
                 }
 
-                _proxyCallFixer = new ProxyCallFixer(module, DeobfuscatedFile);
+                _proxyCallFixer = new ProxyCallFixer(module, DeobfuscatedFile, _nativeEmulator);
                 _proxyCallFixer.FindDelegateCreatorMethod();
                 _proxyCallFixer.Find();
 

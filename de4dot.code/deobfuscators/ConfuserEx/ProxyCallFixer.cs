@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using de4dot.blocks;
 using de4dot.blocks.cflow;
-using de4dot.code.deobfuscators.ConfuserEx.x86;
+//using de4dot.code.deobfuscators.ConfuserEx.x86;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
 
@@ -31,10 +31,12 @@ namespace de4dot.code.deobfuscators.ConfuserEx
         public List<TypeDef> AttributeTypes = new List<TypeDef>();
         public List<MethodDef> DelegateCreatorMethods = new List<MethodDef>();
         public List<MethodDef> NativeMethods = new List<MethodDef>();
+        private x86Emulator _nativeEmulator;
 
-        public ProxyCallFixer(ModuleDefMD module, ISimpleDeobfuscator simpleDeobfuscator) : base(module)
+        public ProxyCallFixer(ModuleDefMD module, ISimpleDeobfuscator simpleDeobfuscator, x86Emulator nativeEmulator) : base(module)
         {
             _simpleDeobfuscator = simpleDeobfuscator;
+            _nativeEmulator = nativeEmulator;
         }
 
         public ProxyCallFixer(ModuleDefMD module, ProxyCallFixer4 oldOne) : base(module, oldOne)
@@ -167,8 +169,9 @@ namespace de4dot.code.deobfuscators.ConfuserEx
 
         private int EmulateNativeMethod(MethodDef externalMethod, int parameter)
         {
-            var nativeMethod = new X86Method(externalMethod, module); //TODO: Possible null
-            return nativeMethod.Execute(parameter);
+            //var nativeMethod = new X86Method(externalMethod, module); //TODO: Possible null
+            //return nativeMethod.Execute(parameter);
+            return (int)_nativeEmulator.Emulate(externalMethod, parameter);
         }
 
         private int EmulateManagedMethod(MethodDef method, int startIndex, int endIndex,
