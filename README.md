@@ -1,7 +1,7 @@
 ## de4dot CEx
 A de4dot fork with full support for vanilla ConfuserEx
 
-## Feature description
+## Features
 * Supports x86 (native) mode
 * Supports normal mode
 * Decrypts and inlines constants
@@ -9,6 +9,10 @@ A de4dot fork with full support for vanilla ConfuserEx
 * Fixes control flow
 * Fixes proxy calls
 * Deobfuscated assemblies are runnable
+
+## Notes
+* You have to unpack the obfuscated assembly **before** running this deobfuscator. The easiest way is to dump the module/s just after the methods have been decrypted.
+* This deobfuscator uses method invocation for constant decryption, therefore you always **risk** running malware if it's present in the obfuscated assembly. Be cautious and use a VM/Sandboxie!
 
 ### [Original README](README-orig.md)
 ---
