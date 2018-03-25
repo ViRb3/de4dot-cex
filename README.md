@@ -19,7 +19,7 @@ A de4dot fork with full support for vanilla ConfuserEx
 
 ## Samples
 
-### Before (obfuscated symbols shortened)
+### Before (obfuscated symbols shortened):
 ```csharp
 ublic byte[] ShiftAddress(uint address)
 {
@@ -72,7 +72,7 @@ ublic byte[] ShiftAddress(uint address)
 }
 ```
 
-### After
+### After:
 ```csharp
 public byte[] ShiftAddress(uint address)
 {
@@ -85,7 +85,7 @@ public byte[] ShiftAddress(uint address)
 }
 ```
 
-### Before (obfuscated symbols shortened)
+### Before (obfuscated symbols shortened):
 ```csharp
 public bool WriteBytes(uint address, List<byte> buffer)
 {
@@ -121,7 +121,7 @@ public bool WriteBytes(uint address, List<byte> buffer)
 }
 ```
 
-### After
+### After:
 ```csharp
 public bool WriteBytes(uint address, List<byte> buffer)
 {
