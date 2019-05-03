@@ -247,10 +247,11 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                 AddMethodsToBeRemoved(_controlFlowFixer.NativeMethods, "Control flow native methods");
 
                 var moduleCctor = DotNetUtils.GetModuleTypeCctor(module);
-                foreach (var instr in moduleCctor.Body.Instructions)
-                    if (instr.OpCode == OpCodes.Call && instr.Operand is MethodDef
-                        && toRemoveFromCctor.Contains((MethodDef) instr.Operand))
-                        instr.OpCode = OpCodes.Nop;
+                if (moduleCctor != null)
+                    foreach (var instr in moduleCctor.Body.Instructions)
+                        if (instr.OpCode == OpCodes.Call && instr.Operand is MethodDef
+                            && toRemoveFromCctor.Contains((MethodDef) instr.Operand))
+                            instr.OpCode = OpCodes.Nop;
 
                 //TODO: Might not always be correct
                 //No more mixed!
