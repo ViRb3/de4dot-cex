@@ -87,6 +87,9 @@ namespace de4dot.code.deobfuscators.ConfuserEx
                         };
                         list.Add(constantInliner);
                     }
+
+                    list.Add(new MethodCallInliner(false));
+
                     return list;
                 }
             }
