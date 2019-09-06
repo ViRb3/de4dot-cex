@@ -17,10 +17,23 @@
     along with de4dot.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+using System;
+
 namespace de4dot_x86 {
 	class Program {
-		static int Main(string[] args) {
-			return de4dot.cui.Program.Main(args);
-		}
+		static int Main(string[] args)
+        {
+            int returnValue = 0;
+            try
+            {
+                returnValue = de4dot.cui.Program.Main(args);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+            }
+
+            return returnValue;
+        }
 	}
 }
